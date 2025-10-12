@@ -1,0 +1,14 @@
+{
+  "domain": "freellm_chat",
+  "name": "FreeLLM Chat Conversation",
+  "after_dependencies": ["assist_pipeline", "intent"],
+  "codeowners": ["@richieam93"],
+  "config_flow": true,
+  "dependencies": ["conversation"],
+  "documentation": "https://github.com/richieam93/FreeLLM-Chat-Conversation",
+  "integration_type": "service",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/richieam93/FreeLLM-Chat-Conversation/issues",
+  "requirements": ["requests"],
+  "version": "1.0.1"
+}

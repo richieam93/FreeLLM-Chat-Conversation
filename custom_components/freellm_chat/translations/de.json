@@ -1,0 +1,20 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "description": "Möchtest du FreeLLM Chat hinzufügen?",
+        "title": "FreeLLM Chat"
+      }
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "data": {
+          "prompt": "Prompt-Vorlage",
+          "selected_model": "Modell auswählen"
+        }
+      }
+    }
+  }
+}
