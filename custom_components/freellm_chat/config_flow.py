@@ -41,7 +41,6 @@ DEFAULT_OPTIONS = types.MappingProxyType(
 
 async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
     """Validate the user input allows us to connect."""
-    # Da LLM7.io keine Authentifizierung erfordert, ist keine Validierung erforderlich
     pass
 
 
@@ -63,7 +62,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
         try:
             await validate_input(self.hass, user_input)
-        except Exception:  # pylint: disable=broad-except
+        except Exception:
             _LOGGER.exception("Unexpected exception")
             errors["base"] = "invalid_auth"
         else:
@@ -80,15 +79,13 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
         config_entry: config_entries.ConfigEntry,
     ) -> config_entries.OptionsFlow:
         """Create the options flow."""
-        return OptionsFlow(config_entry)
+        return OptionsFlow()
 
 
 class OptionsFlow(config_entries.OptionsFlow):
     """freellm_chat config flow options handler."""
 
-    def __init__(self, config_entry: config_entries.ConfigEntry) -> None:
-        """Initialize options flow."""
-        self.config_entry = config_entry
+    # ENTFERNT: __init__ Methode - config_entry wird automatisch von der Basisklasse verwaltet
 
     async def async_step_init(
         self, user_input: dict[str, str] | None = None
@@ -98,51 +95,66 @@ class OptionsFlow(config_entries.OptionsFlow):
             return self.async_create_entry(
                 title="FreeLLM Chat", data=user_input
             )
-        schema = await freellm_chat_config_option_schema(self, self.config_entry.options)
+        schema = await freellm_chat_config_option_schema(self.config_entry.options)
         return self.async_show_form(
             step_id="init",
             data_schema=vol.Schema(schema),
         )
 
+
 async def freellm_chat_config_option_schema(
-    self, options: MappingProxyType[str, Any]
+    options: MappingProxyType[str, Any]
 ) -> dict:
     """Return a schema for freellm_chat completion options."""
 
-    # Hier kannst du eine Liste der verfügbaren Modelle von LLM7.io einfügen
-    # oder die manuelle Eingabe beibehalten
+    # Vollständige Liste der LLM7.io Modelle
     models = [
-        {"label": "gpt-4o-mini-2024-07-18", "value": "gpt-4o-mini-2024-07-18"},
-        {"label": "gpt-4o", "value": "gpt-4o"},
-        {"label": "gpt-o3-mini", "value": "gpt-o3-mini"},
-        {"label": "qwen2.5-coder-32b-instruct:int8", "value": "qwen2.5-coder-32b-instruct:int8"},
-        {"label": "llama-3.3-70b-instruct-fp8-fast", "value": "llama-3.3-70b-instruct-fp8-fast"},
-        {"label": "llama-4-scout-17b-16e-instruct", "value": "llama-4-scout-17b-16e-instruct"},
-        {"label": "mistral-small-2503", "value": "mistral-small-2503"},
-        {"label": "unity-mistral-large", "value": "unity-mistral-large"},
-        {"label": "midijourney", "value": "midijourney"},
-        {"label": "rtist", "value": "rtist"},
-        {"label": "searchgpt", "value": "searchgpt"},
-        {"label": "evil", "value": "evil"},
-        {"label": "deepseek-r1-qwen:32b", "value": "deepseek-r1-qwen:32b"},
-        {"label": "deepseek-r1-distill-llama-70b:fp8", "value": "deepseek-r1-distill-llama-70b:fp8"},
-        {"label": "llama3.1:8b", "value": "llama3.1:8b"},
-        {"label": "phi-4", "value": "phi-4"},
-        {"label": "llama3.2:11b", "value": "llama3.2:11b"},
-        {"label": "pixtral:12b", "value": "pixtral:12b"},
-        {"label": "gemini-2.0-flash", "value": "gemini-2.0-flash"},
-        {"label": "gemini-2.0-flash-thinking", "value": "gemini-2.0-flash-thinking"},
-        {"label": "hormoz:8b", "value": "hormoz:8b"},
-        {"label": "hypnosis-tracy:7b", "value": "hypnosis-tracy:7b"},
-        {"label": "mistral-roblox", "value": "mistral-roblox"},
-        {"label": "roblox-rp", "value": "roblox-rp"},
-        {"label": "deepseek-v3", "value": "deepseek-v3"},
-         {"label": "deepseek-r1", "value": "deepseek-r1"},
-         {"label": "qwen-qwq-32b", "value": "qwen-qwq-32b"},
-         {"label": "sur", "value": "sur"},
-         {"label": "llama-scaleway", "value": "llama-scaleway"},
-         {"label": "openai-audio", "value": "openai-audio"}
-         ]
+        # GPT Modelle
+        {"label": "GPT-4o Mini (2024-07-18)", "value": "gpt-4o-mini-2024-07-18"},
+        {"label": "GPT-4o", "value": "gpt-4o"},
+        {"label": "GPT-o3 Mini", "value": "gpt-o3-mini"},
+        
+        # DeepSeek Modelle
+        {"label": "DeepSeek V3", "value": "deepseek-v3"},
+        {"label": "DeepSeek R1", "value": "deepseek-r1"},
+        {"label": "DeepSeek R1 Qwen 32B", "value": "deepseek-r1-qwen:32b"},
+        {"label": "DeepSeek R1 Distill Llama 70B FP8", "value": "deepseek-r1-distill-llama-70b:fp8"},
+        
+        # Llama Modelle
+        {"label": "Llama 3.1 8B", "value": "llama3.1:8b"},
+        {"label": "Llama 3.2 11B", "value": "llama3.2:11b"},
+        {"label": "Llama 3.3 70B Instruct FP8 Fast", "value": "llama-3.3-70b-instruct-fp8-fast"},
+        {"label": "Llama 4 Scout 17B 16E Instruct", "value": "llama-4-scout-17b-16e-instruct"},
+        {"label": "Llama Scaleway", "value": "llama-scaleway"},
+        
+        # Qwen Modelle
+        {"label": "Qwen 2.5 Coder 32B Instruct INT8", "value": "qwen2.5-coder-32b-instruct:int8"},
+        {"label": "Qwen QWQ 32B", "value": "qwen-qwq-32b"},
+        
+        # Mistral Modelle
+        {"label": "Mistral Small 2503", "value": "mistral-small-2503"},
+        {"label": "Unity Mistral Large", "value": "unity-mistral-large"},
+        {"label": "Mistral Roblox", "value": "mistral-roblox"},
+        
+        # Gemini Modelle
+        {"label": "Gemini 2.0 Flash", "value": "gemini-2.0-flash"},
+        {"label": "Gemini 2.0 Flash Thinking", "value": "gemini-2.0-flash-thinking"},
+        
+        # Andere Modelle
+        {"label": "Phi-4", "value": "phi-4"},
+        {"label": "Pixtral 12B", "value": "pixtral:12b"},
+        {"label": "Hormoz 8B", "value": "hormoz:8b"},
+        {"label": "Hypnosis Tracy 7B", "value": "hypnosis-tracy:7b"},
+        
+        # Spezial-Modelle
+        {"label": "SearchGPT", "value": "searchgpt"},
+        {"label": "Midijourney", "value": "midijourney"},
+        {"label": "Rtist", "value": "rtist"},
+        {"label": "Evil", "value": "evil"},
+        {"label": "Sur", "value": "sur"},
+        {"label": "Roblox RP", "value": "roblox-rp"},
+        {"label": "OpenAI Audio", "value": "openai-audio"},
+    ]
 
     options = {**DEFAULT_OPTIONS, **options}
 
