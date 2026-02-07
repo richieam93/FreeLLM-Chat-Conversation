@@ -1,0 +1,41 @@
+automation:
+  - id: 'bedtime_reminder'
+    alias: "Intelligente Schlafenszeit-Erinnerung"
+    trigger:
+      - platform: time
+        at: "22:30:00"
+    condition:
+      - condition: state
+        entity_id: person.max
+        state: "home"
+      - condition: state
+        entity_id: binary_sensor.workday_tomorrow
+        state: "on"
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Erstelle eine freundliche Schlafenszeit-Erinnerung.
+            
+            Kontext:
+            - Aktuelle Zeit: {{ now().strftime('%H:%M') }}
+            - Wecker morgen: {{ states('sensor.next_alarm') | default('nicht gesetzt') }}
+            - Bildschirmzeit heute: {{ states('sensor.screen_time_today') | default('unbekannt') }}
+            - Letzte Aktivität: {{ states('sensor.last_motion_time') }}
+            
+            Sei freundlich aber bestimmt. Gib einen Tipp für besseren Schlaf.
+            Maximal 3 Sätze.
+        response_variable: bedtime_reminder
+      - service: tts.speak
+        target:
+          entity_id: tts.piper
+        data:
+          media_player_entity_id: media_player.schlafzimmer
+          message: "{{ bedtime_reminder.response.speech.plain.speech }}"
+      - service: light.turn_on
+        target:
+          entity_id: light.schlafzimmer
+        data:
+          brightness_pct: 20
+          color_temp_kelvin: 2700

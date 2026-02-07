@@ -1,0 +1,34 @@
+script:
+  daily_summary:
+    alias: "Tages-Zusammenfassung"
+    description: "Erstellt eine KI-generierte Zusammenfassung des Tages"
+    sequence:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Erstelle eine Zusammenfassung des heutigen Tages:
+            
+            📊 Energie:
+            - Verbrauch: {{ states('sensor.energy_daily_total') }} kWh
+            - Solar: {{ states('sensor.solar_daily_total') | default('N/A') }} kWh
+            
+            🌡️ Klima:
+            - Max Temperatur außen: {{ states('sensor.outdoor_temp_max') }}°C
+            - Min Temperatur außen: {{ states('sensor.outdoor_temp_min') }}°C
+            - Durchschnitt innen: {{ states('sensor.indoor_temp_avg') }}°C
+            
+            🚶 Aktivität:
+            - Haustür geöffnet: {{ states('sensor.front_door_open_count') }}x
+            - Bewegungen erkannt: {{ states('sensor.motion_count_total') }}
+            
+            🔒 Sicherheit:
+            - Alarme: {{ states('sensor.alarm_triggered_count') | default('0') }}
+            - Alle Sensoren OK: {{ states('binary_sensor.all_sensors_ok') }}
+            
+            Fasse in 5-6 Sätzen zusammen. Hebe Besonderheiten hervor.
+        response_variable: daily_summary
+      - service: notify.mobile_app_phone
+        data:
+          title: "📋 Tages-Zusammenfassung"
+          message: "{{ daily_summary.response.speech.plain.speech }}"

@@ -1,0 +1,39 @@
+automation:
+  - id: 'leaving_home_checklist'
+    alias: "Abwesenheits-Checkliste"
+    trigger:
+      - platform: state
+        entity_id: group.all_persons
+        to: "not_home"
+        for:
+          minutes: 5
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Alle Personen haben das Haus verlassen. Erstelle eine Status-Zusammenfassung.
+            
+            Aktueller Status:
+            - Lichter noch an: {{ expand(states.light) | selectattr('state', 'eq', 'on') | list | count }}
+            - Fenster offen: {{ states('sensor.open_windows_count') | default('0') }}
+            - Heizung: {{ states('climate.wohnzimmer') }}
+            - Fernseher: {{ states('media_player.tv_wohnzimmer') }}
+            - Waschmaschine: {{ states('sensor.waschmaschine_status') | default('aus') }}
+            - Herd: {{ states('binary_sensor.stove_on') | default('aus') }}
+            
+            Liste Probleme auf die behoben werden sollten und was automatisch 
+            ausgeschaltet wird. Kurz und prägnant.
+        response_variable: leaving_checklist
+      - service: notify.mobile_app_phone
+        data:
+          title: "🏠 Haus-Status beim Verlassen"
+          message: "{{ leaving_checklist.response.speech.plain.speech }}"
+      - service: light.turn_off
+        target:
+          entity_id: all
+      - service: climate.set_preset_mode
+        target:
+          entity_id: climate.wohnzimmer
+        data:
+          preset_mode: "away"

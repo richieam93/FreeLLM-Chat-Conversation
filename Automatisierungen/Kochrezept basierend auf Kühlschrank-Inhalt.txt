@@ -1,0 +1,27 @@
+automation:
+  - id: 'recipe_suggestion'
+    alias: "KI Rezeptvorschlag"
+    trigger:
+      - platform: event
+        event_type: mobile_app_notification_action
+        event_data:
+          action: "REQUEST_RECIPE"
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Schlage ein Rezept vor basierend auf diesen Zutaten:
+            {{ states('input_text.available_ingredients') }}
+            
+            Zusätzliche Info:
+            - Personen: {{ states('input_number.dinner_persons') | int }}
+            - Kochzeit verfügbar: {{ states('input_select.cooking_time') }}
+            - Diät-Einschränkungen: {{ states('input_select.diet_preference') | default('keine') }}
+            
+            Gib ein einfaches Rezept mit Zutaten und kurzen Schritten.
+        response_variable: recipe
+      - service: notify.mobile_app_phone
+        data:
+          title: "👨‍🍳 Rezeptvorschlag"
+          message: "{{ recipe.response.speech.plain.speech }}"

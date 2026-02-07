@@ -1,0 +1,39 @@
+automation:
+  - id: 'personalized_welcome_home'
+    alias: "Personalisierte Willkommens-Nachricht"
+    trigger:
+      - platform: state
+        entity_id: person.max
+        to: "home"
+    condition:
+      - condition: template
+        value_template: >
+          {{ (as_timestamp(now()) - as_timestamp(states.person.max.last_changed)) > 3600 }}
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Max kommt nach Hause. Erstelle eine personalisierte Begrüßung.
+            
+            Kontext:
+            - Uhrzeit: {{ now().strftime('%H:%M') }}
+            - Wochentag: {{ now().strftime('%A') }}
+            - Wetter: {{ states('weather.home') }}
+            - Temperatur innen: {{ states('sensor.indoor_temperature') }}°C
+            - Lichter an: {{ states('sensor.lights_on_count') | default('0') }}
+            - Letzte Abwesenheitsdauer: ca. {{ ((as_timestamp(now()) - as_timestamp(states.person.max.last_changed)) / 3600) | round(1) }} Stunden
+            
+            Halte es freundlich und kurz (2-3 Sätze).
+        response_variable: welcome_message
+      - service: tts.speak
+        target:
+          entity_id: tts.piper
+        data:
+          media_player_entity_id: media_player.flur
+          message: "{{ welcome_message.response.speech.plain.speech }}"
+      - service: light.turn_on
+        target:
+          entity_id: light.flur
+        data:
+          brightness_pct: 80

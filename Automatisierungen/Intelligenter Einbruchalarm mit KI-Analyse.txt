@@ -1,0 +1,32 @@
+automation:
+  - id: 'smart_intrusion_alert'
+    alias: "KI Einbruchwarnung"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.motion_sensor_flur
+        to: "on"
+    condition:
+      - condition: state
+        entity_id: alarm_control_panel.home_alarm
+        state: "armed_away"
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Bewegung erkannt während niemand zuhause ist.
+            Sensor: Flur
+            Uhrzeit: {{ now().strftime('%H:%M:%S') }}
+            Alarm-Status: {{ states('alarm_control_panel.home_alarm') }}
+            Letzte Bewegung im Haus: {{ states('sensor.last_motion') }}
+            
+            Erstelle eine kurze Sicherheitswarnung für eine Push-Benachrichtigung.
+            Maximal 2 Sätze.
+        response_variable: security_alert
+      - service: notify.mobile_app_phone
+        data:
+          title: "🚨 Sicherheitswarnung"
+          message: "{{ security_alert.response.speech.plain.speech }}"
+          data:
+            priority: high
+            ttl: 0

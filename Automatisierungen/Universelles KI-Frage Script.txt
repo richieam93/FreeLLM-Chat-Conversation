@@ -1,0 +1,36 @@
+script:
+  ask_ai:
+    alias: "Frage die KI"
+    description: "Universelles Script um die KI etwas zu fragen"
+    fields:
+      question:
+        description: "Die Frage an die KI"
+        example: "Wie wird das Wetter morgen?"
+      context:
+        description: "Zusätzlicher Kontext"
+        example: "Für die Planung eines Ausflugs"
+        default: ""
+      notify_device:
+        description: "Gerät für Benachrichtigung"
+        example: "mobile_app_phone"
+        default: "mobile_app_phone"
+    sequence:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Frage: {{ question }}
+            {% if context %}
+            Kontext: {{ context }}
+            {% endif %}
+            
+            Zusätzliche Infos:
+            - Aktuelle Zeit: {{ now().strftime('%H:%M') }}
+            - Datum: {{ now().strftime('%d.%m.%Y') }}
+            - Wetter: {{ states('weather.home') }}
+            - Temperatur: {{ state_attr('weather.home', 'temperature') }}°C
+        response_variable: ai_answer
+      - service: notify.{{ notify_device }}
+        data:
+          title: "🤖 KI Antwort"
+          message: "{{ ai_answer.response.speech.plain.speech }}"

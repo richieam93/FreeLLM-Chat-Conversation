@@ -1,0 +1,28 @@
+automation:
+  - id: 'morning_greeting_ai'
+    alias: "KI Morgenbegrüßung"
+    description: "Personalisierte Morgenbegrüßung basierend auf Wetter und Kalender"
+    trigger:
+      - platform: time
+        at: "07:00:00"
+    condition:
+      - condition: state
+        entity_id: binary_sensor.workday_sensor
+        state: "on"
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Erstelle eine freundliche Morgenbegrüßung für heute. 
+            Das Wetter ist: {{ states('weather.home') }}, 
+            Temperatur: {{ state_attr('weather.home', 'temperature') }}°C.
+            Termine heute: {{ states('sensor.calendar_events') | default('keine') }}.
+            Halte die Antwort kurz und motivierend.
+        response_variable: ai_response
+      - service: tts.speak
+        target:
+          entity_id: tts.piper
+        data:
+          media_player_entity_id: media_player.wohnzimmer
+          message: "{{ ai_response.response.speech.plain.speech }}"

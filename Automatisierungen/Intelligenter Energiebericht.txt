@@ -1,0 +1,29 @@
+automation:
+  - id: 'weekly_energy_report'
+    alias: "Wöchentlicher KI-Energiebericht"
+    trigger:
+      - platform: time
+        at: "18:00:00"
+    condition:
+      - condition: time
+        weekday:
+          - sun
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Erstelle einen Energiebericht für diese Woche:
+            - Stromverbrauch gesamt: {{ states('sensor.energy_weekly_total') }} kWh
+            - Durchschnitt pro Tag: {{ states('sensor.energy_daily_average') }} kWh
+            - Höchster Verbrauch: {{ states('sensor.energy_peak_day') }}
+            - Solar-Ertrag: {{ states('sensor.solar_weekly_total') | default('nicht verfügbar') }} kWh
+            - Kosten geschätzt: {{ (states('sensor.energy_weekly_total') | float * 0.35) | round(2) }}€
+            
+            Vergleiche mit letzter Woche ({{ states('sensor.energy_last_week_total') }} kWh)
+            und gib 2-3 Spartipps.
+        response_variable: energy_report
+      - service: notify.mobile_app_phone
+        data:
+          title: "⚡ Wöchentlicher Energiebericht"
+          message: "{{ energy_report.response.speech.plain.speech }}"

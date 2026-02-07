@@ -1,0 +1,57 @@
+automation:
+  - id: 'emergency_notification'
+    alias: "KI Notfall-Benachrichtigung"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.smoke_detector
+        to: "on"
+      - platform: state
+        entity_id: binary_sensor.water_leak_sensor
+        to: "on"
+      - platform: state
+        entity_id: binary_sensor.co_detector
+        to: "on"
+    action:
+      - variables:
+          sensor_name: "{{ trigger.to_state.name }}"
+          sensor_type: >
+            {% if 'smoke' in trigger.entity_id %}Rauch
+            {% elif 'water' in trigger.entity_id %}Wasserleck
+            {% elif 'co' in trigger.entity_id %}Kohlenmonoxid
+            {% else %}Unbekannt{% endif %}
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            NOTFALL-ALARM ausgelöst!
+            
+            Typ: {{ sensor_type }}
+            Sensor: {{ sensor_name }}
+            Zeit: {{ now().strftime('%H:%M:%S') }}
+            Personen zuhause: {{ expand(states.person) | selectattr('state', 'eq', 'home') | map(attribute='name') | list | join(', ') | default('niemand') }}
+            
+            Erstelle eine KURZE, KLARE Notfall-Nachricht mit:
+            1. Was passiert ist
+            2. Wichtigste Sofortmaßnahme
+            3. Notrufnummer falls nötig
+            
+            Maximal 4 Sätze. Klar und direkt.
+        response_variable: emergency_message
+      - service: notify.mobile_app_phone
+        data:
+          title: "🚨 NOTFALL: {{ sensor_type }}"
+          message: "{{ emergency_message.response.speech.plain.speech }}"
+          data:
+            priority: critical
+            ttl: 0
+            push:
+              sound:
+                name: default
+                critical: 1
+                volume: 1.0
+      - service: tts.speak
+        target:
+          entity_id: tts.piper
+        data:
+          media_player_entity_id: media_player.alle_lautsprecher
+          message: "{{ emergency_message.response.speech.plain.speech }}"

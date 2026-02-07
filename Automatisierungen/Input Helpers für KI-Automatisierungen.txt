@@ -1,0 +1,47 @@
+Füge diese in deine configuration.yaml ein:
+
+YAML:
+
+input_text:
+  available_ingredients:
+    name: "Verfügbare Zutaten"
+    max: 500
+    
+  custom_ai_question:
+    name: "Frage an KI"
+    max: 255
+
+input_number:
+  dinner_persons:
+    name: "Personen zum Essen"
+    min: 1
+    max: 10
+    step: 1
+    
+  household_members:
+    name: "Haushaltsmitglieder"
+    min: 1
+    max: 10
+    step: 1
+
+input_select:
+  cooking_time:
+    name: "Verfügbare Kochzeit"
+    options:
+      - "15 Minuten"
+      - "30 Minuten"
+      - "1 Stunde"
+      - "Unbegrenzt"
+      
+  diet_preference:
+    name: "Diät-Präferenz"
+    options:
+      - "Keine"
+      - "Vegetarisch"
+      - "Vegan"
+      - "Low-Carb"
+      - "Glutenfrei"
+
+input_boolean:
+  ai_notifications_enabled:
+    name: "KI-Benachrichtigungen aktiviert"

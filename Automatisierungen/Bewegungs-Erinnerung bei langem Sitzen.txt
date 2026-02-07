@@ -1,0 +1,28 @@
+automation:
+  - id: 'movement_reminder'
+    alias: "Bewegungs-Erinnerung"
+    trigger:
+      - platform: state
+        entity_id: binary_sensor.desk_occupancy
+        to: "on"
+        for:
+          hours: 2
+    condition:
+      - condition: time
+        after: "09:00:00"
+        before: "18:00:00"
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Der Benutzer sitzt seit 2 Stunden am Schreibtisch.
+            
+            Erstelle eine motivierende, nicht nervige Bewegungs-Erinnerung.
+            Schlage eine kurze Übung vor (30 Sekunden bis 2 Minuten).
+            Sei humorvoll aber respektvoll.
+        response_variable: movement_reminder
+      - service: notify.mobile_app_phone
+        data:
+          title: "🏃 Zeit für Bewegung!"
+          message: "{{ movement_reminder.response.speech.plain.speech }}"

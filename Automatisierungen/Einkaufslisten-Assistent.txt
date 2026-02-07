@@ -1,0 +1,26 @@
+automation:
+  - id: 'shopping_list_assistant'
+    alias: "KI Einkaufsassistent"
+    trigger:
+      - platform: event
+        event_type: shopping_list_updated
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Analysiere die Einkaufsliste und gib Tipps:
+            
+            Aktuelle Liste:
+            {{ states('sensor.shopping_list_items') }}
+            
+            Zusätzliche Info:
+            - Wochentag: {{ now().strftime('%A') }}
+            - Personen im Haushalt: {{ states('input_number.household_members') }}
+            
+            Schlage fehlende Basis-Zutaten vor und gruppiere nach Supermarkt-Abteilungen.
+        response_variable: shopping_tips
+      - service: notify.mobile_app_phone
+        data:
+          title: "🛒 Einkaufsassistent"
+          message: "{{ shopping_tips.response.speech.plain.speech }}"

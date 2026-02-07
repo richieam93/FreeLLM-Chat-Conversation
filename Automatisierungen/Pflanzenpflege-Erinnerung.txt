@@ -1,0 +1,27 @@
+automation:
+  - id: 'plant_care_reminder'
+    alias: "Pflanzenpflege-Erinnerung"
+    trigger:
+      - platform: numeric_state
+        entity_id: sensor.plant_moisture_monstera
+        below: 30
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Eine Pflanze braucht Wasser!
+            
+            Details:
+            - Pflanze: Monstera
+            - Bodenfeuchtigkeit: {{ states('sensor.plant_moisture_monstera') }}%
+            - Letztes Gießen: {{ states('sensor.plant_last_watered_monstera') | default('unbekannt') }}
+            - Standort: Wohnzimmer
+            - Lichtverhältnisse aktuell: {{ states('sensor.illuminance_wohnzimmer') }} lux
+            
+            Erstelle eine kurze Pflegeanweisung mit Wassermenge und Tipps.
+        response_variable: plant_care
+      - service: notify.mobile_app_phone
+        data:
+          title: "🌱 Pflanzenpflege"
+          message: "{{ plant_care.response.speech.plain.speech }}"

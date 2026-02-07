@@ -1,0 +1,30 @@
+automation:
+  - id: 'movie_recommendation'
+    alias: "KI Film-Empfehlung"
+    trigger:
+      - platform: time
+        at: "20:00:00"
+    condition:
+      - condition: time
+        weekday:
+          - fri
+          - sat
+    action:
+      - service: conversation.process
+        data:
+          agent_id: conversation.freellm_chat
+          text: >
+            Es ist Freitagabend/Samstagabend - Filmzeit!
+            
+            Kontext:
+            - Wetter draußen: {{ states('weather.home') }}
+            - Personen zuhause: {{ expand(states.person) | selectattr('state', 'eq', 'home') | map(attribute='name') | list | join(', ') }}
+            - Stimmung (basierend auf Lichtfarbe): {{ state_attr('light.wohnzimmer', 'rgb_color') | default('neutral') }}
+            
+            Empfehle 3 Filme oder Serien mit kurzer Begründung.
+            Berücksichtige das Wetter und die Anzahl der Personen.
+        response_variable: movie_suggestion
+      - service: notify.mobile_app_phone
+        data:
+          title: "🎬 Film-Empfehlung für heute Abend"
+          message: "{{ movie_suggestion.response.speech.plain.speech }}"
