@@ -50,6 +50,33 @@ Use natural language to control your smart home, get information, and more.
 
 ---
 
+## 📁 Ready-to-use Examples / Fertige Beispiele
+
+In folder **[/Automatisierungen](https://github.com/richieam93/FreeLLM-Chat-Conversation/tree/main/Automatisierungen)** you'll find **18 automation examples**:
+
+| Example | Description |
+|---------|-------------|
+| 🌅 Tägliche Morgenbegrüßung | Daily morning greeting with AI |
+| 🎬 Film-Empfehlung am Abend | Movie recommendation in the evening |
+| 🍳 Kochrezept basierend auf Kühlschrank | Recipe based on fridge contents |
+| 🛡️ Intelligenter Einbruchalarm | Smart burglar alarm with AI analysis |
+| 🚪 Intelligente Türklingel-Ansage | Smart doorbell announcement |
+| ⚡ Intelligenter Energiebericht | Smart energy report |
+| 🌡️ Intelligente Klimasteuerung | Smart climate control with explanation |
+| 🏠 Intelligente Abwesenheits-Checkliste | Smart away-from-home checklist |
+| 🚨 Intelligente Notfall-Benachrichtigung | Smart emergency notification |
+| 👋 Personalisierte Willkommens-Nachricht | Personalized welcome message |
+| 🪴 Pflanzenpflege-Erinnerung | Plant care reminder |
+| 😴 Schlafenszeit-Erinnerung | Bedtime reminder |
+| 🏃 Bewegungs-Erinnerung | Movement reminder for long sitting |
+| 🛒 Einkaufslisten-Assistent | Shopping list assistant |
+| 📊 Tages-Zusammenfassung | Daily summary script |
+| 🔒 Täglicher Sicherheitsbericht | Daily security report |
+| ❓ Universelles KI-Frage Script | Universal AI question script |
+| ⚙️ Input Helpers | Input helpers for AI automations |
+
+---
+
 ## 📋 Requirements
 
 | Requirement | Details |
@@ -147,6 +174,33 @@ Nutze natürliche Sprache, um dein Smart Home zu steuern, Informationen abzurufe
 
 ---
 
+## 📁 Fertige Automatisierungen
+
+Im Ordner **[/Automatisierungen](https://github.com/richieam93/FreeLLM-Chat-Conversation/tree/main/Automatisierungen)** findest du **18 fertige Beispiele**:
+
+| Beispiel | Beschreibung |
+|----------|--------------|
+| 🌅 Tägliche Morgenbegrüßung | KI begrüsst dich morgens |
+| 🎬 Film-Empfehlung am Abend | Filmvorschlag basierend auf Stimmung |
+| 🍳 Kochrezept aus Kühlschrank | Rezept basierend auf vorhandenen Zutaten |
+| 🛡️ Intelligenter Einbruchalarm | KI analysiert verdächtige Aktivitäten |
+| 🚪 Intelligente Türklingel-Ansage | Smarte Türklingel mit KI |
+| ⚡ Intelligenter Energiebericht | Täglicher Energieverbrauch-Report |
+| 🌡️ Intelligente Klimasteuerung | Klima mit KI-Erklärung |
+| 🏠 Abwesenheits-Checkliste | Checkliste wenn du gehst |
+| 🚨 Notfall-Benachrichtigung | Smarte Notfall-Meldung |
+| 👋 Willkommens-Nachricht | Personalisierte Begrüssung |
+| 🪴 Pflanzenpflege-Erinnerung | Giess-Erinnerung |
+| 😴 Schlafenszeit-Erinnerung | Zeit fürs Bett |
+| 🏃 Bewegungs-Erinnerung | Steh mal auf! |
+| 🛒 Einkaufslisten-Assistent | Smarte Einkaufsliste |
+| 📊 Tages-Zusammenfassung | Was ist heute passiert? |
+| 🔒 Täglicher Sicherheitsbericht | Alles sicher? |
+| ❓ Universelles KI-Frage Script | Frag die KI alles |
+| ⚙️ Input Helpers | Helfer für KI-Automatisierungen |
+
+---
+
 ## 📋 Voraussetzungen
 
 | Anforderung | Details |
@@ -229,11 +283,6 @@ If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich übe
 
 ---
 
-## 📜 License / Lizenz
-
-MIT License
-
----
 
 Made with ❤️ in Switzerland 🇨🇭 | Entwickelt mit ❤️ in der Schweiz 🇨🇭
 
