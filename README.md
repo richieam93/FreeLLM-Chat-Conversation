@@ -1,3 +1,243 @@
+# FreeLLM Chat Conversation Integration 🤖
+
+💬 **Free LLM/AI Chat for Home Assistant**
+
+💬 **Kostenloser LLM/AI Chat für Home Assistant**
+
+[English](#-english) | [Deutsch](#-deutsch)
+
+---
+
+## ⚠️ Status
+
+| Feature | Status |
+|---------|--------|
+| 🇩🇪 German UI | ✅ Ready |
+| 🇬🇧 English UI | ✅ Ready |
+| 🔌 HACS | ✅ Ready |
+
+---
+
+# 🇬🇧 English
+
+This integration allows you to interact with various Large Language Models (LLMs) via the free LLM7.io API in your Home Assistant environment.
+
+**No API key needed – completely free!**
+
+---
+
+## 🎯 What does it do?
+
+Use natural language to control your smart home, get information, and more.
+
+| Feature | Description |
+|---------|-------------|
+| 🗣️ **Voice Control** | Control devices with natural language |
+| 📊 **Information** | Get weather, news, and other data |
+| 🤖 **Automation** | Automate tasks through conversation |
+| 🔗 **Integration** | Use in your existing automations |
+| 🧠 **Multiple Models** | Choose from various LLM models |
+
+---
+
+## ✨ Use Cases
+
+- "Turn on the living room lights"
+- "What's the weather like today?"
+- "Set a reminder for 5pm"
+- "Create an automation for..."
+- Ask anything!
+
+---
+
+## 📋 Requirements
+
+| Requirement | Details |
+|-------------|---------|
+| **Home Assistant** | 2023.1 or higher |
+| **HACS** | Home Assistant Community Store |
+| **Internet** | For LLM7.io API access |
+
+---
+
+## 🚀 Installation
+
+1. Add this repository to HACS:
+   - URL: github.com/richieam93/FreeLLM-Chat-Conversation
+   - Category: Integration
+2. Search and install "FreeLLM Chat Conversation" via HACS
+3. Restart Home Assistant
+4. Go to **Settings → Integrations → + Add Integration**
+5. Search for "FreeLLM Chat Conversation"
+6. Select your preferred LLM model and prompt
+
+---
+
+## ⚙️ Configuration
+
+1. Go to **Settings → Integrations**
+2. Click **"+ Add Integration"**
+3. Search for **"FreeLLM Chat Conversation"**
+4. Choose your LLM model
+5. Configure the prompt
+6. Done!
+
+---
+
+## 💡 Usage
+
+After installation, use the conversation.process service:
+
+Send a request with text to the LLM and the integration will process the response.
+
+---
+
+## 🔒 Privacy
+
+This integration uses the LLM7.io API:
+
+| Privacy | Details |
+|---------|---------|
+| **Anonymous** | Only anonymous usage data collected |
+| **No personal data** | No personal data stored or used |
+| **Free** | No API key or payment needed |
+
+More info: llm7.io
+
+---
+
+## ⚠️ Disclaimer
+
+- Responses may be inaccurate ("hallucinations")
+- Don't rely on results for legal, medical, or financial advice
+- Service provided "as is" without warranties
+- LLM7.io may change models without notice
+
+---
+
+# 🇩🇪 Deutsch
+
+Diese Integration ermöglicht es dir, mit verschiedenen Large Language Models (LLMs) über die kostenlose LLM7.io API in deiner Home Assistant Umgebung zu interagieren.
+
+**Kein API-Key nötig – komplett kostenlos!**
+
+---
+
+## 🎯 Was macht es?
+
+Nutze natürliche Sprache, um dein Smart Home zu steuern, Informationen abzurufen und vieles mehr.
+
+| Feature | Beschreibung |
+|---------|--------------|
+| 🗣️ **Sprachsteuerung** | Geräte mit natürlicher Sprache steuern |
+| 📊 **Informationen** | Wetter, Nachrichten und andere Daten abrufen |
+| 🤖 **Automatisierung** | Aufgaben durch Konversation automatisieren |
+| 🔗 **Integration** | In bestehende Automatisierungen einbinden |
+| 🧠 **Mehrere Modelle** | Aus verschiedenen LLM-Modellen wählen |
+
+---
+
+## ✨ Anwendungsbeispiele
+
+- "Schalte das Wohnzimmerlicht ein"
+- "Wie ist das Wetter heute?"
+- "Erinnere mich um 17 Uhr"
+- "Erstelle eine Automatisierung für..."
+- Frag einfach alles!
+
+---
+
+## 📋 Voraussetzungen
+
+| Anforderung | Details |
+|-------------|---------|
+| **Home Assistant** | 2023.1 oder höher |
+| **HACS** | Home Assistant Community Store |
+| **Internet** | Für LLM7.io API Zugriff |
+
+---
+
+## 🚀 Installation
+
+1. Repository zu HACS hinzufügen:
+   - URL: github.com/richieam93/FreeLLM-Chat-Conversation
+   - Kategorie: Integration
+2. "FreeLLM Chat Conversation" über HACS suchen und installieren
+3. Home Assistant neu starten
+4. Gehe zu **Einstellungen → Integrationen → + Integration hinzufügen**
+5. Suche nach "FreeLLM Chat Conversation"
+6. LLM-Modell und Prompt auswählen
+
+---
+
+## ⚙️ Konfiguration
+
+1. Gehe zu **Einstellungen → Integrationen**
+2. Klicke **"+ Integration hinzufügen"**
+3. Suche nach **"FreeLLM Chat Conversation"**
+4. LLM-Modell auswählen
+5. Prompt konfigurieren
+6. Fertig!
+
+---
+
+## 💡 Verwendung
+
+Nach der Installation nutze den conversation.process Dienst:
+
+Sende eine Anfrage mit Text an das LLM und die Integration verarbeitet die Antwort.
+
+---
+
+## 🔒 Datenschutz
+
+Diese Integration verwendet die LLM7.io API:
+
+| Datenschutz | Details |
+|-------------|---------|
+| **Anonym** | Nur anonyme Nutzungsdaten |
+| **Keine persönlichen Daten** | Keine persönlichen Daten gespeichert |
+| **Kostenlos** | Kein API-Key oder Zahlung nötig |
+
+Mehr Infos: llm7.io
+
+---
+
+## ⚠️ Haftungsausschluss
+
+- Antworten können ungenau sein ("Halluzinationen")
+- Nicht für rechtliche, medizinische oder finanzielle Beratung
+- Service wird "wie besehen" bereitgestellt
+- LLM7.io kann Modelle ohne Vorankündigung ändern
+
+---
+
+## ☕ Support this Project / Unterstütze dieses Projekt
+
+This project is **free and open source**. Dieses Projekt ist **gratis und Open Source**.
+
+If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich über einen Kaffee:
+
+<a href="https://www.buymeacoffee.com/geartec" target="_blank"><img src="https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png" alt="Buy Me A Coffee" height="50"></a>
+
+---
+
+## 📝 Feedback & Support
+
+- 🐛 **Issues:** [GitHub Issues](https://github.com/richieam93/FreeLLM-Chat-Conversation/issues)
+- 💬 **Questions / Fragen:** Just open an issue!
+
+---
+
+## 📜 License / Lizenz
+
+MIT License
+
+---
+
+Made with ❤️ in Switzerland 🇨🇭 | Entwickelt mit ❤️ in der Schweiz 🇨🇭
+
+
 # FreeLLM Chat Conversation Integration für Home Assistant
 
 [![HACS Default](https://img.shields.io/badge/HACS-Default-orange.svg)](https://github.com/hacs/integration)
