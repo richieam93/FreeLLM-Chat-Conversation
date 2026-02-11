@@ -320,7 +320,7 @@ Beispiel: `7bd5d3e50dd0a4005d34c36711ec54da`
 4. Klicke oben rechts auf **⋮ → Als YAML bearbeiten**
 5. Lösche alles und füge ein:
 
-### yaml
+```yaml
 alias: Test FreeLLM Chat
 description: "Testet die KI-Sprachausgabe"
 triggers: []
@@ -344,6 +344,7 @@ actions:
         {% endif %}
       preannounce: true
 mode: single
+```
 
 ---
 
