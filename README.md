@@ -276,6 +276,77 @@ If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich übe
 
 ---
 
+## 🎙️ Anleitung: FreeLLM Chat mit Home Assistant Sprachausgabe
+
+### Voraussetzungen
+
+- Home Assistant mit FreeLLM Chat Integration installiert
+- Ein Lautsprecher (z.B. ESP32-S3 mit ESPHome, oder anderer Assist Satellite)
+- Einen konfigurierten Assistenten (z.B. mit Piper TTS)
+
+---
+
+### Schritt 1: Agent-ID finden
+
+Die Agent-ID ist die Identifikation deiner FreeLLM Chat Integration.
+
+1. Gehe zu **Entwicklerwerkzeuge → Aktionen**
+2. Wähle die Aktion: `conversation.reload`
+3. Klicke auf **Aktion ausführen**
+4. In der Antwort siehst du deine Agent-ID
+
+Beispiel: `01K7CFMYFHXEJKZ5NTH4KBYM6C`
+
+---
+
+### Schritt 2: Lautsprecher Device-ID finden
+
+1. Gehe zu **Einstellungen → Geräte & Dienste → Geräte**
+2. Suche deinen Lautsprecher (z.B. "ESP32-S3" oder dein Assist Satellite)
+3. Klicke auf das Gerät
+4. Schaue in die URL deines Browsers:
+
+http://deine-ha-ip:8123/config/devices/device/DEINE_DEVICE_ID_HIER
+
+Beispiel: `7bd5d3e50dd0a4005d34c36711ec54da`
+
+---
+
+### Schritt 3: Teste die Verbindung
+
+1. Gehe zu **Einstellungen → Automatisierungen & Szenen**
+2. Klicke **+ Automatisierung erstellen**
+3. Wähle **Neue Automatisierung erstellen**
+4. Klicke oben rechts auf **⋮ → Als YAML bearbeiten**
+5. Lösche alles und füge ein:
+
+### yaml
+alias: Test FreeLLM Chat
+description: "Testet die KI-Sprachausgabe"
+triggers: []
+conditions: []
+actions:
+  - action: conversation.process
+    data:
+      agent_id: DEINE_AGENT_ID_HIER
+      text: "Sage Hallo und erzähle einen kurzen Witz"
+    response_variable: antwort
+    continue_on_error: true
+  - action: assist_satellite.start_conversation
+    target:
+      device_id: DEINE_DEVICE_ID_HIER
+    data:
+      start_message: >
+        {% if antwort is defined and antwort.response is defined %}
+        {{ antwort.response.speech.plain.speech }}
+        {% else %}
+        Fehler: Keine Antwort von der KI erhalten
+        {% endif %}
+      preannounce: true
+mode: single
+
+---
+
 ## 📝 Feedback & Support
 
 - 🐛 **Issues:** [GitHub Issues](https://github.com/richieam93/FreeLLM-Chat-Conversation/issues)
