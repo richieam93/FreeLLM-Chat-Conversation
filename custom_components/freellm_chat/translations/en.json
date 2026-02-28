@@ -1,18 +1,63 @@
 {
   "config": {
+    "error": {
+      "invalid_auth": "Invalid authentication"
+    },
+    "abort": {
+      "no_entities_available": "No controllable devices available"
+    },
     "step": {
       "user": {
-        "description": "Do you want to add FreeLLM Chat?",
-        "title": "FreeLLM Chat"
+        "title": "FreeLLM Chat",
+        "description": "Do you want to set up FreeLLM Chat?"
       }
     }
   },
   "options": {
     "step": {
       "init": {
+        "title": "FreeLLM Chat Settings",
+        "description": "Select an area to configure",
+        "menu_options": {
+          "chat_settings": "💬 Chat Settings",
+          "control_settings": "⚙️ Device Control",
+          "entity_selection": "🏠 Select Devices & Areas"
+        }
+      },
+      "chat_settings": {
+        "title": "💬 Chat Settings",
+        "description": "Configure normal chat behavior",
         "data": {
-          "prompt": "Prompt template",
-          "selected_model": "Select Model"
+          "chat_model": "AI Model",
+          "prompt": "System Prompt for Chat"
+        },
+        "data_description": {
+          "chat_model": "Select the AI model for chat",
+          "prompt": "The system prompt defines the AI behavior during normal conversations"
+        }
+      },
+      "control_settings": {
+        "title": "⚙️ Device Control",
+        "description": "Enable and configure device control via voice/chat",
+        "data": {
+          "enable_device_control": "Enable Device Control",
+          "control_prompt": "System Prompt for Control"
+        },
+        "data_description": {
+          "enable_device_control": "Allows control of smart home devices via chat",
+          "control_prompt": "The system prompt defines how control commands are interpreted"
+        }
+      },
+      "entity_selection": {
+        "title": "🏠 Devices & Areas",
+        "description": "Select which devices can be controlled via chat.\n\nYou can select areas (e.g., Living Room) and/or individual devices.",
+        "data": {
+          "selected_areas": "Select Areas",
+          "selected_entities": "Select Individual Devices"
+        },
+        "data_description": {
+          "selected_areas": "All devices in these areas can be controlled",
+          "selected_entities": "These specific devices can be controlled"
         }
       }
     }
