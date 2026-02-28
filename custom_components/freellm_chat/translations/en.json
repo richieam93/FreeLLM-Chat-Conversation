@@ -1,15 +1,18 @@
 {
   "config": {
     "error": {
-      "invalid_auth": "Invalid authentication"
+      "invalid_auth": "Invalid authentication",
+      "cannot_connect": "Connection failed",
+      "unknown": "Unknown error"
     },
     "abort": {
+      "already_configured": "Already configured",
       "no_entities_available": "No controllable devices available"
     },
     "step": {
       "user": {
         "title": "FreeLLM Chat",
-        "description": "Do you want to set up FreeLLM Chat?"
+        "description": "Do you want to set up FreeLLM Chat?\n\nThis integration enables:\n• 💬 Chat with AI assistants\n• 🏠 Smart Home control via voice\n• 📊 Sensor queries\n• 🌈 Color control for lights"
       }
     }
   },
@@ -20,46 +23,150 @@
         "description": "Select an area to configure",
         "menu_options": {
           "chat_settings": "💬 Chat Settings",
-          "control_settings": "⚙️ Device Control",
-          "entity_selection": "🏠 Select Devices & Areas"
+          "control_settings": "⚙️ Device Control & Sensors",
+          "entity_selection": "🏠 Select Devices & Areas",
+          "performance_settings": "⚡ Performance & Caching",
+          "advanced_settings": "🔧 Advanced Settings"
         }
       },
       "chat_settings": {
         "title": "💬 Chat Settings",
-        "description": "Configure normal chat behavior",
+        "description": "Configure the normal chat behavior of the AI",
         "data": {
           "chat_model": "AI Model",
-          "prompt": "System Prompt for Chat"
+          "chat_temperature": "Temperature (Creativity)",
+          "chat_max_tokens": "Maximum Response Length (Tokens)",
+          "history_limit": "Chat History Limit",
+          "prompt": "System Prompt"
         },
         "data_description": {
-          "chat_model": "Select the AI model for chat",
-          "prompt": "The system prompt defines the AI behavior during normal conversations"
+          "chat_model": "Select the AI model for conversations",
+          "chat_temperature": "0.0 = very precise and factual\n1.0 = balanced creative\n2.0 = very creative and variable",
+          "chat_max_tokens": "Determines maximum response length. Higher values = longer responses possible",
+          "history_limit": "Number of messages stored in conversation history",
+          "prompt": "The system prompt defines the personality and behavior of the AI"
         }
       },
       "control_settings": {
-        "title": "⚙️ Device Control",
-        "description": "Enable and configure device control via voice/chat",
+        "title": "⚙️ Device Control & Sensors",
+        "description": "Configure smart home control via voice/chat",
         "data": {
           "enable_device_control": "Enable Device Control",
-          "control_prompt": "System Prompt for Control"
+          "enable_sensors": "Allow Sensor Queries",
+          "control_temperature": "Temperature (Accuracy)",
+          "control_max_tokens": "Maximum Response Length (Tokens)",
+          "control_prompt": "Control Prompt"
         },
         "data_description": {
-          "enable_device_control": "Allows control of smart home devices via chat",
-          "control_prompt": "The system prompt defines how control commands are interpreted"
+          "enable_device_control": "Enables control of smart home devices via chat (lights, switches, heating, etc.)",
+          "enable_sensors": "Enables queries like:\n• 'How warm is the kitchen?'\n• 'Which windows are open?'\n• 'Battery status'\n• 'What is turned on?'",
+          "control_temperature": "Lower = more accurate commands\nRecommended: 0.1-0.3 for reliable control",
+          "control_max_tokens": "For control commands, 300-500 tokens are usually sufficient",
+          "control_prompt": "The prompt that defines how control commands are interpreted"
         }
       },
       "entity_selection": {
-        "title": "🏠 Devices & Areas",
-        "description": "Select which devices can be controlled via chat.\n\nYou can select areas (e.g., Living Room) and/or individual devices.",
+        "title": "🏠 Select Devices & Areas",
+        "description": "Select which devices can be controlled via chat.\n\n**Tip:** You can select areas (e.g., Living Room) AND/OR individual devices.\n\n⚠️ Only selected devices are controllable!",
         "data": {
           "selected_areas": "Select Areas",
           "selected_entities": "Select Individual Devices"
         },
         "data_description": {
-          "selected_areas": "All devices in these areas can be controlled",
-          "selected_entities": "These specific devices can be controlled"
+          "selected_areas": "All devices and sensors in these areas will be enabled for control",
+          "selected_entities": "Additional individual devices that can be controlled (even if their area is not selected)"
+        }
+      },
+      "performance_settings": {
+        "title": "⚡ Performance & Caching",
+        "description": "Optimize speed and resource usage",
+        "data": {
+          "enable_cache": "Enable Response Cache",
+          "cache_duration": "Cache Duration (Seconds)",
+          "optimize_prompts": "Automatically Optimize Prompts",
+          "compression_level": "Compression Level"
+        },
+        "data_description": {
+          "enable_cache": "Stores responses for identical queries.\nSignificantly speeds up repeated questions!",
+          "cache_duration": "How long responses are stored in cache.\n• 60s = 1 minute\n• 300s = 5 minutes (recommended)\n• 3600s = 1 hour",
+          "optimize_prompts": "Automatically shortens prompts for faster responses.\nEspecially useful with many devices.",
+          "compression_level": "• Auto: Adapts automatically to device count (recommended)\n• None: Full prompts, slower\n• Medium: Balanced\n• High: Minimal prompts, fastest responses"
+        }
+      },
+      "advanced_settings": {
+        "title": "🔧 Advanced Settings",
+        "description": "Additional configuration options for advanced users",
+        "data": {
+          "enable_statistics": "Collect Statistics",
+          "timeout": "Timeout (Seconds)",
+          "retry_count": "Retry Count on Error"
+        },
+        "data_description": {
+          "enable_statistics": "Collects anonymous usage statistics like:\n• Cache hit rate\n• Average response time\n• Most common commands",
+          "timeout": "Maximum wait time for an LLM response.\n• 30s recommended for normal use\n• Increase for slow internet connections",
+          "retry_count": "How often to automatically retry on error.\n• 0 = No retry\n• 2-3 = Recommended for reliable control"
         }
       }
     }
+  },
+  "services": {
+    "clear_cache": {
+      "name": "Clear Cache",
+      "description": "Clears the response cache"
+    },
+    "get_statistics": {
+      "name": "Get Statistics",
+      "description": "Shows usage statistics"
+    }
+  },
+  "selector": {
+    "compression_level": {
+      "options": {
+        "auto": "🔄 Automatic (recommended)",
+        "none": "📄 No compression",
+        "medium": "📊 Medium",
+        "high": "⚡ High (fastest)"
+      }
+    }
+  },
+  "state": {
+    "unavailable": "Unavailable",
+    "unknown": "Unknown"
+  },
+  "entity": {
+    "sensor": {
+      "cache_hit_rate": {
+        "name": "Cache Hit Rate"
+      },
+      "total_requests": {
+        "name": "Total Requests"
+      },
+      "average_response_time": {
+        "name": "Avg. Response Time"
+      }
+    }
+  },
+  "exceptions": {
+    "connection_error": "Connection to LLM server failed",
+    "timeout_error": "Request timed out",
+    "invalid_response": "Invalid response from server",
+    "entity_not_found": "Device not found: {entity_id}",
+    "service_call_failed": "Service call failed: {error}"
+  },
+  "common": {
+    "on": "On",
+    "off": "Off",
+    "open": "Open",
+    "closed": "Closed",
+    "online": "Online",
+    "offline": "Offline",
+    "temperature": "Temperature",
+    "humidity": "Humidity",
+    "brightness": "Brightness",
+    "color": "Color",
+    "area": "Area",
+    "device": "Device",
+    "sensor": "Sensor",
+    "status": "Status"
   }
 }

@@ -4,7 +4,8 @@ from __future__ import annotations
 import logging
 from typing import Literal
 
-import requests
+import aiohttp
+import asyncio
 
 from homeassistant.components import conversation
 from homeassistant.config_entries import ConfigEntry
@@ -12,22 +13,41 @@ from homeassistant.const import MATCH_ALL
 from homeassistant.core import HomeAssistant
 from homeassistant.exceptions import TemplateError
 from homeassistant.helpers import intent, template
+from homeassistant.helpers.aiohttp_client import async_get_clientsession
 
 from .const import (
     CONF_CHAT_MODEL,
     CONF_PROMPT,
+    CONF_CHAT_TEMPERATURE,
+    CONF_CHAT_MAX_TOKENS,
     CONF_ENABLE_DEVICE_CONTROL,
     CONF_CONTROL_PROMPT,
+    CONF_CONTROL_TEMPERATURE,
+    CONF_CONTROL_MAX_TOKENS,
     CONF_SELECTED_ENTITIES,
     CONF_SELECTED_AREAS,
+    CONF_ENABLE_SENSORS,
+    CONF_ENABLE_CACHE,
+    CONF_CACHE_DURATION,
+    CONF_OPTIMIZE_PROMPTS,
     DEFAULT_CHAT_MODEL,
     DEFAULT_PROMPT,
+    DEFAULT_CHAT_TEMPERATURE,
+    DEFAULT_CHAT_MAX_TOKENS,
     DEFAULT_ENABLE_DEVICE_CONTROL,
     DEFAULT_CONTROL_PROMPT,
+    DEFAULT_CONTROL_TEMPERATURE,
+    DEFAULT_CONTROL_MAX_TOKENS,
+    DEFAULT_ENABLE_SENSORS,
+    DEFAULT_ENABLE_CACHE,
+    DEFAULT_CACHE_DURATION,
+    DEFAULT_OPTIMIZE_PROMPTS,
     DOMAIN,
     LLM7_BASE_URL,
 )
 from .device_control import DeviceController
+from .response_cache import ResponseCache
+from .prompt_optimizer import PromptOptimizer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -52,6 +72,13 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         self.hass = hass
         self.entry = entry
         self.history: dict[str, list[dict]] = {}
+        
+        # Cache initialisieren
+        cache_duration = entry.options.get(CONF_CACHE_DURATION, DEFAULT_CACHE_DURATION)
+        self.cache = ResponseCache(max_age_seconds=cache_duration)
+        
+        # Prompt Optimizer
+        self.optimizer = PromptOptimizer()
 
     @property
     def attribution(self):
@@ -73,110 +100,122 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         conversation_id = user_input.conversation_id
         user_text = user_input.text
 
-        # Prüfe ob Gerätesteuerung aktiviert ist
         enable_control = self.entry.options.get(
             CONF_ENABLE_DEVICE_CONTROL, DEFAULT_ENABLE_DEVICE_CONTROL
         )
 
-        # Bestimme ob es eine Steuerungsanfrage ist
-        is_control_request = enable_control and self._is_control_request(user_text)
+        # Prüfe auf Steuerungs- oder Abfrage-Anfrage
+        is_control_or_query = enable_control and self._is_control_or_query(user_text)
 
-        if is_control_request:
+        if is_control_or_query:
             result = await self._handle_control_request(user_input, conversation_id)
         else:
             result = await self._handle_chat_request(user_input, conversation_id)
 
         return result
 
-    def _is_control_request(self, text: str) -> bool:
-        """Check if the request is a device control request."""
-        control_keywords = [
-            # Deutsch
+    def _is_control_or_query(self, text: str) -> bool:
+        """Check if the request is a device control or sensor query."""
+        keywords = [
+            # Steuerung
             "schalte", "schalt", "mach", "mache", "stelle", "stell",
-            "dimme", "dimm", "erhöhe", "erhöh", "verringere", "verringer",
-            "öffne", "öffn", "schließe", "schließ", "fahre", "fahr",
-            "starte", "start", "stoppe", "stopp", "spiele", "spiel",
-            "pausiere", "pausier", "aktiviere", "aktivier", "deaktiviere",
-            "licht", "lampe", "leuchte", "heizung", "thermostat",
-            "jalousie", "rollladen", "rollo", "rolladen",
-            "musik", "fernseher", "tv", "lautsprecher",
-            "ventilator", "lüfter", "klimaanlage", "klima",
-            " an", " aus", " ein", "anmachen", "ausmachen", "einschalten", "ausschalten",
-            # Englisch
-            "turn on", "turn off", "switch on", "switch off",
-            "set", "dim", "brighten", "open", "close",
+            "dimme", "dimm", "erhöhe", "verringere", "öffne", "schließe",
+            "starte", "stoppe", "spiele", "pausiere", "aktiviere",
+            "licht", "lampe", "heizung", "jalousie", "rollladen",
+            " an", " aus", " ein",
+            # Abfragen
+            "temperatur", "wie warm", "wie kalt", "wie viel grad",
+            "luftfeuchtigkeit", "feuchtigkeit", "humidity",
+            "sensor", "wert", "messung", "status",
+            "zeig mir", "was ist", "wie ist", "welche",
+            "fenster", "tür", "offen", "geschlossen",
+            "eingeschaltet", "ausgeschaltet", "batterie", "offline",
         ]
         
         text_lower = text.lower()
-        return any(keyword in text_lower for keyword in control_keywords)
+        return any(keyword in text_lower for keyword in keywords)
 
     async def _handle_control_request(
         self, 
         user_input: conversation.ConversationInput,
         conversation_id: str
     ) -> conversation.ConversationResult:
-        """Handle device control requests."""
+        """Handle device control and sensor query requests."""
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         control_prompt = self.entry.options.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
+        control_temperature = self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE)
+        control_max_tokens = self.entry.options.get(CONF_CONTROL_MAX_TOKENS, DEFAULT_CONTROL_MAX_TOKENS)
         selected_entities = self.entry.options.get(CONF_SELECTED_ENTITIES, [])
         selected_areas = self.entry.options.get(CONF_SELECTED_AREAS, [])
+        enable_sensors = self.entry.options.get(CONF_ENABLE_SENSORS, DEFAULT_ENABLE_SENSORS)
+        enable_cache = self.entry.options.get(CONF_ENABLE_CACHE, DEFAULT_ENABLE_CACHE)
+        optimize_prompts = self.entry.options.get(CONF_OPTIMIZE_PROMPTS, DEFAULT_OPTIMIZE_PROMPTS)
 
-        # Initialize device controller
-        controller = DeviceController(self.hass, selected_entities, selected_areas)
-        
-        # Check if any entities are available
-        controlled_entities = controller.get_controlled_entities()
-        if not controlled_entities:
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_speech(
-                "⚠️ Es sind keine Geräte zur Steuerung konfiguriert. "
-                "Bitte wähle zuerst Geräte oder Bereiche in den Einstellungen aus."
-            )
-            return conversation.ConversationResult(
-                response=intent_response,
-                conversation_id=conversation_id
-            )
-        
-        # Add entity context to prompt
-        full_prompt = control_prompt + controller.generate_context()
-
-        try:
-            # Create temporary conversation for control
-            messages = [
-                {"role": "system", "content": full_prompt},
-                {"role": "user", "content": user_input.text}
-            ]
-
-            response_text = await self._async_query_llm(model_name, messages)
-            _LOGGER.debug(f"Control LLM Response: {response_text}")
-
-            # Execute the command
-            result = await controller.execute_control_command(response_text)
-
-            if result:
-                response_text = result
-            else:
-                # Fallback: Zeige die LLM-Antwort wenn keine Steuerung erkannt wurde
-                response_text = (
-                    "Ich konnte den Befehl leider nicht verstehen. "
-                    "Bitte formuliere ihn anders.\n\n"
-                    f"Beispiele:\n"
-                    f"• 'Schalte das Licht in der Küche an'\n"
-                    f"• 'Mache das Wohnzimmer grün'\n"
-                    f"• 'Dimme das Schlafzimmer auf 50%'"
-                )
-
-        except Exception as e:
-            _LOGGER.error(f"Error in control request: {e}")
-            response_text = f"❌ Fehler bei der Steuerung: {str(e)}"
-
-        intent_response = intent.IntentResponse(language=user_input.language)
-        intent_response.async_set_speech(response_text)
-        
-        return conversation.ConversationResult(
-            response=intent_response,
-            conversation_id=conversation_id
+        controller = DeviceController(
+            self.hass, selected_entities, selected_areas, enable_sensors
         )
+        
+        controlled = controller.get_controlled_entities(include_sensors=True)
+        if not controlled:
+            return self._create_response(
+                "⚠️ Keine Geräte konfiguriert.",
+                user_input.language,
+                conversation_id
+            )
+        
+        # Optimiere Prompt bei vielen Geräten
+        if optimize_prompts:
+            control_prompt = self.optimizer.simplify_control_prompt(
+                control_prompt, len(controlled)
+            )
+            entity_context = self.optimizer.compress_entity_list(controlled)
+        else:
+            entity_context = controller.generate_context()
+        
+        full_prompt = control_prompt + entity_context
+
+        # Prüfe Cache
+        cached_response = None
+        if enable_cache:
+            cached_response = self.cache.get(full_prompt, user_input.text)
+        
+        if cached_response:
+            _LOGGER.debug("Using cached response")
+            response_text = cached_response
+        else:
+            try:
+                messages = [
+                    {"role": "system", "content": full_prompt},
+                    {"role": "user", "content": user_input.text}
+                ]
+
+                response_text = await self._async_query_llm(
+                    model_name, 
+                    messages,
+                    temperature=control_temperature,
+                    max_tokens=control_max_tokens
+                )
+                
+                _LOGGER.debug(f"LLM Response: {response_text}")
+
+                result = await controller.execute_command(response_text)
+
+                if result:
+                    response_text = result
+                    
+                    # Cache speichern
+                    if enable_cache:
+                        self.cache.set(full_prompt, user_input.text, response_text)
+                else:
+                    response_text = "Befehl nicht verstanden. Beispiel: 'Schalte das Licht an'"
+
+            except asyncio.TimeoutError:
+                response_text = "⏱️ Zeitüberschreitung."
+            except Exception as e:
+                _LOGGER.error(f"Error: {e}")
+                response_text = f"❌ Fehler: {str(e)}"
+
+        return self._create_response(response_text, user_input.language, conversation_id)
 
     async def _handle_chat_request(
         self,
@@ -186,6 +225,8 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         """Handle normal chat requests."""
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         raw_prompt = self.entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
+        chat_temperature = self.entry.options.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE)
+        chat_max_tokens = self.entry.options.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS)
 
         try:
             prompt = template.Template(raw_prompt, self.hass).async_render(
@@ -193,82 +234,96 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 parse_result=False,
             )
         except TemplateError as err:
-            _LOGGER.error(f"Error rendering prompt: {err}")
-            intent_response = intent.IntentResponse(language=user_input.language)
-            intent_response.async_set_error(
-                intent.IntentResponseErrorCode.UNKNOWN,
-                f"Template-Fehler: {err}",
-            )
-            return conversation.ConversationResult(
-                response=intent_response,
-                conversation_id=conversation_id
+            return self._create_error_response(
+                f"Template-Fehler: {err}", user_input.language, conversation_id
             )
 
-        # Manage conversation history
         if conversation_id not in self.history:
             self.history[conversation_id] = [{"role": "system", "content": prompt}]
 
         self.history[conversation_id].append({"role": "user", "content": user_input.text})
 
-        # Limit history to last 20 messages to avoid token limits
-        if len(self.history[conversation_id]) > 21:  # 1 system + 20 messages
+        # Limit history
+        if len(self.history[conversation_id]) > 21:
             self.history[conversation_id] = (
-                [self.history[conversation_id][0]] +  # Keep system prompt
-                self.history[conversation_id][-20:]    # Keep last 20 messages
+                [self.history[conversation_id][0]] +
+                self.history[conversation_id][-20:]
             )
 
         try:
             response_text = await self._async_query_llm(
-                model_name, self.history[conversation_id]
+                model_name, 
+                self.history[conversation_id],
+                temperature=chat_temperature,
+                max_tokens=chat_max_tokens
             )
             self.history[conversation_id].append({
                 "role": "assistant", 
                 "content": response_text
             })
         except Exception as e:
-            _LOGGER.error(f"Error querying LLM: {e}")
-            response_text = f"❌ Fehler bei der Anfrage: {str(e)}"
+            _LOGGER.error(f"Error: {e}")
+            response_text = f"❌ Fehler: {str(e)}"
 
-        intent_response = intent.IntentResponse(language=user_input.language)
-        intent_response.async_set_speech(response_text)
+        return self._create_response(response_text, user_input.language, conversation_id)
+
+    async def _async_query_llm(
+        self, 
+        model_name: str, 
+        messages: list[dict],
+        temperature: float = 0.7,
+        max_tokens: int = 1000
+    ) -> str:
+        """Send a query to the LLM."""
+        url = f"{LLM7_BASE_URL}/chat/completions"
         
+        payload = {
+            "model": model_name,
+            "messages": messages,
+            "temperature": temperature,
+            "max_tokens": max_tokens,
+        }
+
+        session = async_get_clientsession(self.hass)
+        
+        try:
+            async with asyncio.timeout(30):
+                async with session.post(url, json=payload) as response:
+                    response.raise_for_status()
+                    data = await response.json()
+
+            if "choices" in data and len(data["choices"]) > 0:
+                return data["choices"][0]["message"]["content"].strip()
+            
+            return str(data)
+
+        except asyncio.TimeoutError:
+            _LOGGER.error("LLM timeout")
+            raise
+        except aiohttp.ClientError as e:
+            _LOGGER.error(f"LLM Error: {e}")
+            raise
+
+    def _create_response(
+        self, text: str, language: str, conversation_id: str
+    ) -> conversation.ConversationResult:
+        """Create a conversation response."""
+        intent_response = intent.IntentResponse(language=language)
+        intent_response.async_set_speech(text)
         return conversation.ConversationResult(
             response=intent_response,
             conversation_id=conversation_id
         )
 
-    async def _async_query_llm(self, model_name: str, messages: list[dict]) -> str:
-        """Send a query to the LLM."""
-        url = f"{LLM7_BASE_URL}/chat/completions"
-        headers = {"Content-Type": "application/json"}
-
-        payload = {
-            "model": model_name,
-            "messages": messages,
-            "temperature": 0.7,
-            "max_tokens": 1000
-        }
-
-        def make_request(url, headers, json_payload):
-            return requests.post(url, headers=headers, json=json_payload, timeout=60)
-
-        try:
-            response = await self.hass.async_add_executor_job(
-                make_request, url, headers, payload
-            )
-            response.raise_for_status()
-            response_json = response.json()
-
-            if "choices" in response_json and len(response_json["choices"]) > 0:
-                if "message" in response_json["choices"][0]:
-                    return response_json["choices"][0]["message"]["content"].strip()
-            
-            _LOGGER.warning(f"Unexpected API response: {response_json}")
-            return str(response_json)
-
-        except requests.exceptions.Timeout:
-            _LOGGER.error("LLM API request timed out")
-            raise Exception("Die Anfrage hat zu lange gedauert. Bitte versuche es erneut.")
-        except requests.exceptions.RequestException as e:
-            _LOGGER.error(f"LLM API Error: {e}")
-            raise
+    def _create_error_response(
+        self, error: str, language: str, conversation_id: str
+    ) -> conversation.ConversationResult:
+        """Create an error response."""
+        intent_response = intent.IntentResponse(language=language)
+        intent_response.async_set_error(
+            intent.IntentResponseErrorCode.UNKNOWN, error
+        )
+        return conversation.ConversationResult(
+            response=intent_response,
+            conversation_id=conversation_id
+        )

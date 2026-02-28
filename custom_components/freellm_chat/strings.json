@@ -9,7 +9,7 @@
     "step": {
       "user": {
         "title": "FreeLLM Chat",
-        "description": "Möchtest du FreeLLM Chat einrichten?"
+        "description": "FreeLLM Chat einrichten?"
       }
     }
   },
@@ -17,11 +17,12 @@
     "step": {
       "init": {
         "title": "FreeLLM Chat Einstellungen",
-        "description": "Wähle einen Bereich zum Konfigurieren",
         "menu_options": {
           "chat_settings": "💬 Chat-Einstellungen",
           "control_settings": "⚙️ Gerätesteuerung",
-          "entity_selection": "🏠 Geräte & Bereiche auswählen"
+          "entity_selection": "🏠 Geräte & Bereiche",
+          "performance_settings": "⚡ Performance",
+          "advanced_settings": "🔧 Erweitert"
         }
       },
       "chat_settings": {
@@ -29,35 +30,68 @@
         "description": "Konfiguriere das normale Chat-Verhalten",
         "data": {
           "chat_model": "KI-Modell",
-          "prompt": "System-Prompt für Chat"
+          "chat_temperature": "Temperatur (Kreativität)",
+          "chat_max_tokens": "Max. Antwortlänge",
+          "history_limit": "Chat-Verlauf Limit",
+          "prompt": "System-Prompt"
         },
         "data_description": {
-          "chat_model": "Wähle das KI-Modell für den Chat",
-          "prompt": "Der System-Prompt definiert das Verhalten der KI bei normalen Gesprächen"
+          "chat_temperature": "0.0 = präzise, 1.0 = kreativ, 2.0 = sehr kreativ",
+          "chat_max_tokens": "Höhere Werte = längere Antworten",
+          "history_limit": "Anzahl der gespeicherten Nachrichten"
         }
       },
       "control_settings": {
         "title": "⚙️ Gerätesteuerung",
-        "description": "Aktiviere und konfiguriere die Gerätesteuerung per Sprache/Chat",
+        "description": "Konfiguriere die Smart Home Steuerung",
         "data": {
           "enable_device_control": "Gerätesteuerung aktivieren",
-          "control_prompt": "System-Prompt für Steuerung"
+          "enable_sensors": "Sensor-Abfragen erlauben",
+          "control_temperature": "Temperatur (Genauigkeit)",
+          "control_max_tokens": "Max. Antwortlänge",
+          "control_prompt": "Steuerungs-Prompt"
         },
         "data_description": {
-          "enable_device_control": "Ermöglicht die Steuerung von Smart Home Geräten über den Chat",
-          "control_prompt": "Der System-Prompt definiert wie Steuerungsbefehle interpretiert werden"
+          "enable_sensors": "Temperaturen, Luftfeuchtigkeit, etc. abfragen",
+          "control_temperature": "Niedriger = genauer (empfohlen: 0.1-0.3)"
         }
       },
       "entity_selection": {
         "title": "🏠 Geräte & Bereiche",
-        "description": "Wähle aus, welche Geräte über den Chat gesteuert werden können.\n\nDu kannst Bereiche (z.B. Wohnzimmer) und/oder einzelne Geräte auswählen.",
+        "description": "Wähle aus, welche Geräte gesteuert werden können",
         "data": {
-          "selected_areas": "Bereiche auswählen",
-          "selected_entities": "Einzelne Geräte auswählen"
+          "selected_areas": "Bereiche",
+          "selected_entities": "Einzelne Geräte"
+        }
+      },
+      "performance_settings": {
+        "title": "⚡ Performance",
+        "description": "Optimiere Geschwindigkeit und Ressourcenverbrauch",
+        "data": {
+          "enable_cache": "Antwort-Cache aktivieren",
+          "cache_duration": "Cache-Dauer",
+          "optimize_prompts": "Prompts optimieren",
+          "compression_level": "Komprimierungsstufe"
         },
         "data_description": {
-          "selected_areas": "Alle Geräte in diesen Bereichen können gesteuert werden",
-          "selected_entities": "Diese spezifischen Geräte können gesteuert werden"
+          "enable_cache": "Identische Anfragen aus Cache beantworten",
+          "cache_duration": "Wie lange Antworten gecacht werden",
+          "optimize_prompts": "Prompts für schnellere Antworten kürzen",
+          "compression_level": "Auto passt sich an Gerätezahl an"
+        }
+      },
+      "advanced_settings": {
+        "title": "🔧 Erweiterte Einstellungen",
+        "description": "Zusätzliche Konfigurationsoptionen",
+        "data": {
+          "enable_statistics": "Statistiken sammeln",
+          "timeout": "Timeout",
+          "retry_count": "Wiederholungsversuche"
+        },
+        "data_description": {
+          "enable_statistics": "Sammelt anonyme Nutzungsstatistiken",
+          "timeout": "Maximale Wartezeit für LLM-Antwort",
+          "retry_count": "Anzahl Wiederholungen bei Fehler"
         }
       }
     }

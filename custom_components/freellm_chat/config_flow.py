@@ -17,19 +17,48 @@ from homeassistant.helpers.selector import (
     SelectSelectorConfig,
     SelectSelectorMode,
     BooleanSelector,
+    NumberSelector,
+    NumberSelectorConfig,
+    NumberSelectorMode,
 )
 
 from .const import (
     CONF_CHAT_MODEL,
     CONF_PROMPT,
+    CONF_CHAT_TEMPERATURE,
+    CONF_CHAT_MAX_TOKENS,
     CONF_ENABLE_DEVICE_CONTROL,
     CONF_CONTROL_PROMPT,
+    CONF_CONTROL_TEMPERATURE,
+    CONF_CONTROL_MAX_TOKENS,
     CONF_SELECTED_ENTITIES,
     CONF_SELECTED_AREAS,
+    CONF_ENABLE_SENSORS,
+    CONF_ENABLE_CACHE,
+    CONF_CACHE_DURATION,
+    CONF_OPTIMIZE_PROMPTS,
+    CONF_COMPRESSION_LEVEL,
+    CONF_ENABLE_STATISTICS,
+    CONF_HISTORY_LIMIT,
+    CONF_TIMEOUT,
+    CONF_RETRY_COUNT,
     DEFAULT_CHAT_MODEL,
     DEFAULT_PROMPT,
+    DEFAULT_CHAT_TEMPERATURE,
+    DEFAULT_CHAT_MAX_TOKENS,
     DEFAULT_ENABLE_DEVICE_CONTROL,
     DEFAULT_CONTROL_PROMPT,
+    DEFAULT_CONTROL_TEMPERATURE,
+    DEFAULT_CONTROL_MAX_TOKENS,
+    DEFAULT_ENABLE_SENSORS,
+    DEFAULT_ENABLE_CACHE,
+    DEFAULT_CACHE_DURATION,
+    DEFAULT_OPTIMIZE_PROMPTS,
+    DEFAULT_COMPRESSION_LEVEL,
+    DEFAULT_ENABLE_STATISTICS,
+    DEFAULT_HISTORY_LIMIT,
+    DEFAULT_TIMEOUT,
+    DEFAULT_RETRY_COUNT,
     DOMAIN,
 )
 from .entity_selector import EntitySelector
@@ -41,13 +70,26 @@ STEP_USER_DATA_SCHEMA = vol.Schema({})
 DEFAULT_OPTIONS = types.MappingProxyType({
     CONF_CHAT_MODEL: DEFAULT_CHAT_MODEL,
     CONF_PROMPT: DEFAULT_PROMPT,
+    CONF_CHAT_TEMPERATURE: DEFAULT_CHAT_TEMPERATURE,
+    CONF_CHAT_MAX_TOKENS: DEFAULT_CHAT_MAX_TOKENS,
     CONF_ENABLE_DEVICE_CONTROL: DEFAULT_ENABLE_DEVICE_CONTROL,
     CONF_CONTROL_PROMPT: DEFAULT_CONTROL_PROMPT,
+    CONF_CONTROL_TEMPERATURE: DEFAULT_CONTROL_TEMPERATURE,
+    CONF_CONTROL_MAX_TOKENS: DEFAULT_CONTROL_MAX_TOKENS,
     CONF_SELECTED_ENTITIES: [],
     CONF_SELECTED_AREAS: [],
+    CONF_ENABLE_SENSORS: DEFAULT_ENABLE_SENSORS,
+    CONF_ENABLE_CACHE: DEFAULT_ENABLE_CACHE,
+    CONF_CACHE_DURATION: DEFAULT_CACHE_DURATION,
+    CONF_OPTIMIZE_PROMPTS: DEFAULT_OPTIMIZE_PROMPTS,
+    CONF_COMPRESSION_LEVEL: DEFAULT_COMPRESSION_LEVEL,
+    CONF_ENABLE_STATISTICS: DEFAULT_ENABLE_STATISTICS,
+    CONF_HISTORY_LIMIT: DEFAULT_HISTORY_LIMIT,
+    CONF_TIMEOUT: DEFAULT_TIMEOUT,
+    CONF_RETRY_COUNT: DEFAULT_RETRY_COUNT,
 })
 
-# Vollständige Liste aller LLM7.io Modelle
+# Alle LLM7.io Modelle
 ALL_MODELS = [
     # GPT Modelle
     {"label": "GPT-4o Mini (2024-07-18)", "value": "gpt-4o-mini-2024-07-18"},
@@ -96,14 +138,16 @@ ALL_MODELS = [
     {"label": "OpenAI Audio", "value": "openai-audio"},
 ]
 
-
-async def validate_input(hass: HomeAssistant, data: dict[str, Any]) -> None:
-    """Validate the user input allows us to connect."""
-    pass
+COMPRESSION_LEVELS = [
+    {"label": "🔄 Automatisch (empfohlen)", "value": "auto"},
+    {"label": "📄 Keine Komprimierung", "value": "none"},
+    {"label": "📊 Mittel", "value": "medium"},
+    {"label": "⚡ Hoch (schnellste)", "value": "high"},
+]
 
 
 class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
-    """Handle a config flow for freellm_chat Conversation."""
+    """Handle a config flow for freellm_chat."""
 
     VERSION = 1
 
@@ -117,24 +161,7 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
                 data_schema=STEP_USER_DATA_SCHEMA
             )
 
-        errors = {}
-
-        try:
-            await validate_input(self.hass, user_input)
-        except Exception:
-            _LOGGER.exception("Unexpected exception")
-            errors["base"] = "invalid_auth"
-        else:
-            return self.async_create_entry(
-                title="FreeLLM Chat",
-                data=user_input
-            )
-
-        return self.async_show_form(
-            step_id="user",
-            data_schema=STEP_USER_DATA_SCHEMA,
-            errors=errors
-        )
+        return self.async_create_entry(title="FreeLLM Chat", data=user_input)
 
     @staticmethod
     @callback
@@ -146,139 +173,237 @@ class ConfigFlow(config_entries.ConfigFlow, domain=DOMAIN):
 
 
 class OptionsFlow(config_entries.OptionsFlow):
-    """freellm_chat config flow options handler."""
-
-    # KEIN __init__ mehr nötig! config_entry wird automatisch von der Basisklasse bereitgestellt
+    """freellm_chat options handler."""
 
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Manage the options - Main menu."""
+        """Main menu."""
         return self.async_show_menu(
             step_id="init",
-            menu_options=["chat_settings", "control_settings", "entity_selection"]
+            menu_options=[
+                "chat_settings",
+                "control_settings",
+                "entity_selection",
+                "performance_settings",
+                "advanced_settings"
+            ]
         )
 
+    # ===== CHAT EINSTELLUNGEN =====
     async def async_step_chat_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
         """Handle chat settings."""
         if user_input is not None:
-            # Update nur die Chat-Einstellungen, behalte andere Einstellungen
             new_options = {**self.config_entry.options}
             new_options[CONF_CHAT_MODEL] = user_input.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
             new_options[CONF_PROMPT] = user_input.get(CONF_PROMPT, DEFAULT_PROMPT)
-            
+            new_options[CONF_CHAT_TEMPERATURE] = user_input.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE)
+            new_options[CONF_CHAT_MAX_TOKENS] = user_input.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS)
+            new_options[CONF_HISTORY_LIMIT] = user_input.get(CONF_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT)
             return self.async_create_entry(title="", data=new_options)
 
         options = {**DEFAULT_OPTIONS, **self.config_entry.options}
-
-        schema = vol.Schema({
-            vol.Optional(
-                CONF_CHAT_MODEL,
-                description={"suggested_value": options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)},
-            ): SelectSelector(SelectSelectorConfig(
-                options=ALL_MODELS,
-                mode=SelectSelectorMode.DROPDOWN
-            )),
-            vol.Optional(
-                CONF_PROMPT,
-                description={"suggested_value": options.get(CONF_PROMPT, DEFAULT_PROMPT)},
-            ): TemplateSelector(),
-        })
 
         return self.async_show_form(
             step_id="chat_settings",
-            data_schema=schema,
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_CHAT_MODEL,
+                    description={"suggested_value": options.get(CONF_CHAT_MODEL)},
+                ): SelectSelector(SelectSelectorConfig(
+                    options=ALL_MODELS,
+                    mode=SelectSelectorMode.DROPDOWN
+                )),
+                vol.Optional(
+                    CONF_CHAT_TEMPERATURE,
+                    description={"suggested_value": options.get(CONF_CHAT_TEMPERATURE)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=0.0, max=2.0, step=0.1, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_CHAT_MAX_TOKENS,
+                    description={"suggested_value": options.get(CONF_CHAT_MAX_TOKENS)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=100, max=4000, step=100, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_HISTORY_LIMIT,
+                    description={"suggested_value": options.get(CONF_HISTORY_LIMIT)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=5, max=50, step=5, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_PROMPT,
+                    description={"suggested_value": options.get(CONF_PROMPT)},
+                ): TemplateSelector(),
+            }),
         )
 
+    # ===== STEUERUNGS EINSTELLUNGEN =====
     async def async_step_control_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle device control settings."""
+        """Handle control settings."""
         if user_input is not None:
-            # Update nur die Steuerungs-Einstellungen, behalte andere Einstellungen
             new_options = {**self.config_entry.options}
-            new_options[CONF_ENABLE_DEVICE_CONTROL] = user_input.get(
-                CONF_ENABLE_DEVICE_CONTROL, DEFAULT_ENABLE_DEVICE_CONTROL
-            )
-            new_options[CONF_CONTROL_PROMPT] = user_input.get(
-                CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT
-            )
-            
+            new_options[CONF_ENABLE_DEVICE_CONTROL] = user_input.get(CONF_ENABLE_DEVICE_CONTROL, DEFAULT_ENABLE_DEVICE_CONTROL)
+            new_options[CONF_ENABLE_SENSORS] = user_input.get(CONF_ENABLE_SENSORS, DEFAULT_ENABLE_SENSORS)
+            new_options[CONF_CONTROL_TEMPERATURE] = user_input.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE)
+            new_options[CONF_CONTROL_MAX_TOKENS] = user_input.get(CONF_CONTROL_MAX_TOKENS, DEFAULT_CONTROL_MAX_TOKENS)
+            new_options[CONF_CONTROL_PROMPT] = user_input.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
             return self.async_create_entry(title="", data=new_options)
 
         options = {**DEFAULT_OPTIONS, **self.config_entry.options}
-
-        schema = vol.Schema({
-            vol.Optional(
-                CONF_ENABLE_DEVICE_CONTROL,
-                description={"suggested_value": options.get(
-                    CONF_ENABLE_DEVICE_CONTROL, DEFAULT_ENABLE_DEVICE_CONTROL
-                )},
-            ): BooleanSelector(),
-            vol.Optional(
-                CONF_CONTROL_PROMPT,
-                description={"suggested_value": options.get(
-                    CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT
-                )},
-            ): TemplateSelector(),
-        })
 
         return self.async_show_form(
             step_id="control_settings",
-            data_schema=schema,
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_ENABLE_DEVICE_CONTROL,
+                    description={"suggested_value": options.get(CONF_ENABLE_DEVICE_CONTROL)},
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_ENABLE_SENSORS,
+                    description={"suggested_value": options.get(CONF_ENABLE_SENSORS)},
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_CONTROL_TEMPERATURE,
+                    description={"suggested_value": options.get(CONF_CONTROL_TEMPERATURE)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=0.0, max=1.0, step=0.1, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_CONTROL_MAX_TOKENS,
+                    description={"suggested_value": options.get(CONF_CONTROL_MAX_TOKENS)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=100, max=2000, step=50, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_CONTROL_PROMPT,
+                    description={"suggested_value": options.get(CONF_CONTROL_PROMPT)},
+                ): TemplateSelector(),
+            }),
         )
 
+    # ===== ENTITY AUSWAHL =====
     async def async_step_entity_selection(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Handle entity and area selection."""
+        """Handle entity selection."""
         if user_input is not None:
-            # Update nur die Entity-Auswahl, behalte andere Einstellungen
             new_options = {**self.config_entry.options}
             new_options[CONF_SELECTED_AREAS] = user_input.get(CONF_SELECTED_AREAS, [])
             new_options[CONF_SELECTED_ENTITIES] = user_input.get(CONF_SELECTED_ENTITIES, [])
-            
             return self.async_create_entry(title="", data=new_options)
 
-        # Hole verfügbare Bereiche und Entities
+        enable_sensors = self.config_entry.options.get(CONF_ENABLE_SENSORS, DEFAULT_ENABLE_SENSORS)
         areas = EntitySelector.get_available_areas(self.hass)
-        entities = EntitySelector.get_available_entities(self.hass)
+        entities = EntitySelector.get_available_entities(self.hass, include_sensors=enable_sensors)
         options = {**DEFAULT_OPTIONS, **self.config_entry.options}
 
-        # Erstelle Schema basierend auf verfügbaren Optionen
         schema_dict = {}
 
-        # Bereiche Auswahl (nur wenn Bereiche vorhanden)
         if areas:
             schema_dict[vol.Optional(
                 CONF_SELECTED_AREAS,
                 description={"suggested_value": options.get(CONF_SELECTED_AREAS, [])},
             )] = SelectSelector(SelectSelectorConfig(
-                options=areas,
-                mode=SelectSelectorMode.DROPDOWN,
-                multiple=True
+                options=areas, mode=SelectSelectorMode.DROPDOWN, multiple=True
             ))
 
-        # Entities Auswahl (nur wenn Entities vorhanden)
         if entities:
             schema_dict[vol.Optional(
                 CONF_SELECTED_ENTITIES,
                 description={"suggested_value": options.get(CONF_SELECTED_ENTITIES, [])},
             )] = SelectSelector(SelectSelectorConfig(
-                options=entities,
-                mode=SelectSelectorMode.DROPDOWN,
-                multiple=True
+                options=entities, mode=SelectSelectorMode.DROPDOWN, multiple=True
             ))
 
-        # Fallback wenn keine Entities/Bereiche vorhanden
         if not schema_dict:
             return self.async_abort(reason="no_entities_available")
 
-        schema = vol.Schema(schema_dict)
-
         return self.async_show_form(
             step_id="entity_selection",
-            data_schema=schema,
+            data_schema=vol.Schema(schema_dict),
+        )
+
+    # ===== PERFORMANCE EINSTELLUNGEN =====
+    async def async_step_performance_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle performance settings."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options}
+            new_options[CONF_ENABLE_CACHE] = user_input.get(CONF_ENABLE_CACHE, DEFAULT_ENABLE_CACHE)
+            new_options[CONF_CACHE_DURATION] = user_input.get(CONF_CACHE_DURATION, DEFAULT_CACHE_DURATION)
+            new_options[CONF_OPTIMIZE_PROMPTS] = user_input.get(CONF_OPTIMIZE_PROMPTS, DEFAULT_OPTIMIZE_PROMPTS)
+            new_options[CONF_COMPRESSION_LEVEL] = user_input.get(CONF_COMPRESSION_LEVEL, DEFAULT_COMPRESSION_LEVEL)
+            return self.async_create_entry(title="", data=new_options)
+
+        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
+
+        return self.async_show_form(
+            step_id="performance_settings",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_ENABLE_CACHE,
+                    description={"suggested_value": options.get(CONF_ENABLE_CACHE)},
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_CACHE_DURATION,
+                    description={"suggested_value": options.get(CONF_CACHE_DURATION)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=60, max=3600, step=60, mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement="Sekunden"
+                )),
+                vol.Optional(
+                    CONF_OPTIMIZE_PROMPTS,
+                    description={"suggested_value": options.get(CONF_OPTIMIZE_PROMPTS)},
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_COMPRESSION_LEVEL,
+                    description={"suggested_value": options.get(CONF_COMPRESSION_LEVEL)},
+                ): SelectSelector(SelectSelectorConfig(
+                    options=COMPRESSION_LEVELS, mode=SelectSelectorMode.DROPDOWN
+                )),
+            }),
+        )
+
+    # ===== ERWEITERTE EINSTELLUNGEN =====
+    async def async_step_advanced_settings(
+        self, user_input: dict[str, Any] | None = None
+    ) -> FlowResult:
+        """Handle advanced settings."""
+        if user_input is not None:
+            new_options = {**self.config_entry.options}
+            new_options[CONF_ENABLE_STATISTICS] = user_input.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS)
+            new_options[CONF_TIMEOUT] = user_input.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+            new_options[CONF_RETRY_COUNT] = user_input.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
+            return self.async_create_entry(title="", data=new_options)
+
+        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
+
+        return self.async_show_form(
+            step_id="advanced_settings",
+            data_schema=vol.Schema({
+                vol.Optional(
+                    CONF_ENABLE_STATISTICS,
+                    description={"suggested_value": options.get(CONF_ENABLE_STATISTICS)},
+                ): BooleanSelector(),
+                vol.Optional(
+                    CONF_TIMEOUT,
+                    description={"suggested_value": options.get(CONF_TIMEOUT)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=10, max=120, step=5, mode=NumberSelectorMode.SLIDER,
+                    unit_of_measurement="Sekunden"
+                )),
+                vol.Optional(
+                    CONF_RETRY_COUNT,
+                    description={"suggested_value": options.get(CONF_RETRY_COUNT)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=0, max=5, step=1, mode=NumberSelectorMode.SLIDER
+                )),
+            }),
         )

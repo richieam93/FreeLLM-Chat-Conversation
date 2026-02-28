@@ -1,16 +1,19 @@
 """Device control handler for freellm_chat."""
 from __future__ import annotations
 
+import asyncio
 import logging
 import json
 import re
 from typing import Any
+from datetime import datetime, timedelta
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
-from homeassistant.exceptions import HomeAssistantError
 
-from .const import SUPPORTED_DOMAINS
+from .const import CONTROL_DOMAINS, SENSOR_DOMAINS, COLOR_PRESETS
+from .sensor_analyzer import SensorAnalyzer
+from .color_manager import ColorManager
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -18,48 +21,67 @@ _LOGGER = logging.getLogger(__name__)
 class DeviceController:
     """Handler for device control operations."""
 
+    # Class-level cache
+    _entity_cache: dict | None = None
+    _cache_time: datetime | None = None
+    _cache_duration = timedelta(seconds=5)
+
     def __init__(
         self, 
         hass: HomeAssistant, 
         selected_entities: list[str] | None, 
-        selected_areas: list[str] | None
+        selected_areas: list[str] | None,
+        enable_sensors: bool = True,
+        custom_colors: dict[str, list[int]] | None = None
     ) -> None:
         """Initialize the device controller."""
         self.hass = hass
         self.selected_entities = selected_entities or []
         self.selected_areas = selected_areas or []
+        self.enable_sensors = enable_sensors
         self._entity_registry = er.async_get(hass)
         self._area_registry = ar.async_get(hass)
         self._device_registry = dr.async_get(hass)
+        self.color_manager = ColorManager(custom_colors)
 
-    def get_controlled_entities(self) -> dict[str, dict]:
+    def get_controlled_entities(self, include_sensors: bool = True) -> dict[str, dict]:
         """Get all entities that can be controlled based on selection."""
+        # Cache prüfen
+        now = datetime.now()
+        cache_key = f"{hash(tuple(self.selected_entities))}_{hash(tuple(self.selected_areas))}_{include_sensors}"
+        
+        if (DeviceController._entity_cache is not None and 
+            DeviceController._cache_time is not None and
+            now - DeviceController._cache_time < DeviceController._cache_duration):
+            cached = DeviceController._entity_cache.get(cache_key)
+            if cached:
+                return cached
+
         controlled_entities = {}
 
-        # Wenn keine Auswahl getroffen wurde, keine Entities zurückgeben
         if not self.selected_entities and not self.selected_areas:
             return {}
+
+        allowed_domains = CONTROL_DOMAINS + SENSOR_DOMAINS if (include_sensors and self.enable_sensors) else CONTROL_DOMAINS
 
         for state in self.hass.states.async_all():
             entity_id = state.entity_id
             
-            # Nur unterstützte Domains
-            if state.domain not in SUPPORTED_DOMAINS:
+            if state.domain not in allowed_domains:
                 continue
 
-            # Prüfe ob Entity direkt ausgewählt ist
+            # Prüfe ob Entity direkt ausgewählt
             if entity_id in self.selected_entities:
                 controlled_entities[entity_id] = self._build_entity_info(state)
                 continue
 
-            # Prüfe ob der Bereich des Entity ausgewählt ist
+            # Prüfe Bereich
             if self.selected_areas:
                 entity_entry = self._entity_registry.async_get(entity_id)
                 
                 if entity_entry:
                     area_id = entity_entry.area_id
                     
-                    # Wenn Entity keinen Bereich hat, prüfe Device
                     if not area_id and entity_entry.device_id:
                         device = self._device_registry.async_get(entity_entry.device_id)
                         if device:
@@ -67,6 +89,12 @@ class DeviceController:
                     
                     if area_id and area_id in self.selected_areas:
                         controlled_entities[entity_id] = self._build_entity_info(state)
+
+        # Cache aktualisieren
+        if DeviceController._entity_cache is None:
+            DeviceController._entity_cache = {}
+        DeviceController._entity_cache[cache_key] = controlled_entities
+        DeviceController._cache_time = now
 
         return controlled_entities
 
@@ -78,7 +106,6 @@ class DeviceController:
         if entity_entry:
             area_id = entity_entry.area_id
             
-            # Wenn Entity keinen Bereich hat, prüfe Device
             if not area_id and entity_entry.device_id:
                 device = self._device_registry.async_get(entity_entry.device_id)
                 if device:
@@ -95,124 +122,76 @@ class DeviceController:
             'state': state.state,
             'domain': state.domain,
             'area': area_name,
-            'attributes': self._filter_attributes(dict(state.attributes))
+            'attributes': self._filter_attributes(state.domain, dict(state.attributes)),
+            'unit': state.attributes.get('unit_of_measurement', '')
         }
 
-    def _filter_attributes(self, attributes: dict) -> dict:
-        """Filter important attributes for LLM context."""
-        important_attrs = [
-            'brightness',
-            'brightness_pct',
-            'rgb_color',
-            'hs_color',
-            'color_temp',
-            'color_temp_kelvin',
-            'temperature',
-            'current_temperature',
-            'target_temperature',
-            'hvac_mode',
-            'hvac_modes',
-            'fan_mode',
-            'fan_modes',
-            'swing_mode',
-            'position',
-            'current_position',
-            'volume_level',
-            'media_title',
-            'source',
-            'source_list',
-            'supported_color_modes',
-            'min_temp',
-            'max_temp',
-        ]
+    def _filter_attributes(self, domain: str, attributes: dict) -> dict:
+        """Filter important attributes."""
+        important = ['friendly_name']
         
-        return {k: v for k, v in attributes.items() if k in important_attrs}
+        if domain == 'light':
+            important.extend(['brightness', 'rgb_color', 'color_temp_kelvin', 'supported_color_modes'])
+        elif domain == 'climate':
+            important.extend(['temperature', 'current_temperature', 'hvac_mode', 'hvac_modes'])
+        elif domain == 'cover':
+            important.extend(['current_position'])
+        elif domain == 'media_player':
+            important.extend(['volume_level', 'media_title', 'source'])
+        elif domain in ['sensor', 'binary_sensor']:
+            important.extend(['unit_of_measurement', 'device_class', 'state_class'])
+        
+        return {k: v for k, v in attributes.items() if k in important}
 
     def generate_context(self) -> str:
-        """Generate context information about controlled entities for the LLM."""
-        entities = self.get_controlled_entities()
+        """Generate context for LLM."""
+        entities = self.get_controlled_entities(include_sensors=True)
         
         if not entities:
-            return "\n\n⚠️ KEINE GERÄTE ZUR STEUERUNG VERFÜGBAR!\nBitte wähle zuerst Geräte oder Bereiche in den Einstellungen aus."
+            return "\n\n⚠️ KEINE GERÄTE VERFÜGBAR!"
 
-        context = "\n\n=== VERFÜGBARE GERÄTE ZUR STEUERUNG ===\n"
+        context = "\n\n=== VERFÜGBARE GERÄTE ===\n"
         
-        # Gruppiere nach Bereichen
-        by_area: dict[str, list] = {}
+        by_area: dict[str, dict[str, list]] = {}
+        
         for entity_id, info in entities.items():
             area = info['area'] or 'Ohne Bereich'
+            domain = info['domain']
+            
             if area not in by_area:
-                by_area[area] = []
-            by_area[area].append((entity_id, info))
+                by_area[area] = {'control': [], 'sensor': []}
+            
+            category = 'sensor' if domain in SENSOR_DOMAINS else 'control'
+            by_area[area][category].append((entity_id, info))
 
-        for area, area_entities in sorted(by_area.items()):
+        for area in sorted(by_area.keys()):
+            categories = by_area[area]
             context += f"\n📍 {area}:\n"
-            for entity_id, info in sorted(area_entities, key=lambda x: x[1]['name']):
-                context += f"  • {info['name']}\n"
-                context += f"    Entity-ID: {entity_id}\n"
-                context += f"    Domain: {info['domain']}\n"
-                context += f"    Status: {info['state']}\n"
-                
-                # Zusätzliche Infos für bestimmte Domains
-                if info['domain'] == 'light' and info['state'] == 'on':
-                    attrs = info['attributes']
-                    if 'brightness_pct' in attrs:
-                        context += f"    Helligkeit: {attrs['brightness_pct']}%\n"
-                    elif 'brightness' in attrs:
-                        brightness_pct = round(attrs['brightness'] / 255 * 100)
-                        context += f"    Helligkeit: {brightness_pct}%\n"
-                    if 'rgb_color' in attrs:
-                        context += f"    Farbe (RGB): {attrs['rgb_color']}\n"
-                    if 'color_temp_kelvin' in attrs:
-                        context += f"    Farbtemperatur: {attrs['color_temp_kelvin']}K\n"
-                        
-                elif info['domain'] == 'climate':
-                    attrs = info['attributes']
-                    if 'temperature' in attrs:
-                        context += f"    Zieltemperatur: {attrs['temperature']}°C\n"
-                    if 'current_temperature' in attrs:
-                        context += f"    Aktuelle Temperatur: {attrs['current_temperature']}°C\n"
-                    if 'hvac_mode' in attrs:
-                        context += f"    Modus: {attrs['hvac_mode']}\n"
-                
-                elif info['domain'] == 'cover':
-                    attrs = info['attributes']
-                    if 'current_position' in attrs:
-                        context += f"    Position: {attrs['current_position']}%\n"
-                
-                elif info['domain'] == 'media_player':
-                    attrs = info['attributes']
-                    if 'volume_level' in attrs:
-                        context += f"    Lautstärke: {int(attrs['volume_level'] * 100)}%\n"
-                    if 'media_title' in attrs:
-                        context += f"    Spielt: {attrs['media_title']}\n"
+            
+            if categories['control']:
+                for entity_id, info in sorted(categories['control'], key=lambda x: x[1]['name']):
+                    context += f"  • {info['name']}({entity_id.split('.')[-1]})[{info['state']}]\n"
+            
+            if categories['sensor']:
+                for entity_id, info in sorted(categories['sensor'], key=lambda x: x[1]['name'])[:5]:
+                    unit = info.get('unit', '')
+                    context += f"  📊 {info['name']}: {info['state']}{unit}\n"
 
-        context += f"\n=== GESAMT: {len(entities)} Geräte verfügbar ===\n"
+        total_control = sum(len(c['control']) for c in by_area.values())
+        total_sensor = sum(len(c['sensor']) for c in by_area.values())
+        context += f"\n=== {total_control} Geräte + {total_sensor} Sensoren ===\n"
         
         return context
 
-    async def execute_control_command(self, response: str) -> str | None:
-        """Parse and execute control commands from LLM response."""
+    async def execute_command(self, response: str) -> str | None:
+        """Parse and execute commands from LLM response."""
         try:
-            # Bereinige die Antwort von möglichen Markdown-Code-Blöcken
-            clean_response = response.strip()
-            clean_response = re.sub(r'^```json\s*', '', clean_response)
-            clean_response = re.sub(r'^```\s*', '', clean_response)
-            clean_response = re.sub(r'\s*```$', '', clean_response)
+            clean_response = self._clean_json_response(response)
             
-            # Extrahiere JSON aus der Antwort
-            json_match = re.search(r'\{[\s\S]*"action"[\s\S]*\}', clean_response)
-            
-            if json_match:
-                json_str = json_match.group()
-            else:
-                # Versuche die gesamte Antwort als JSON zu parsen
-                json_str = clean_response
-
             try:
-                command = json.loads(json_str)
+                command = json.loads(clean_response)
             except json.JSONDecodeError:
-                _LOGGER.debug(f"Could not parse as JSON: {clean_response}")
+                _LOGGER.debug(f"Could not parse: {clean_response[:100]}")
                 return None
 
             action = command.get("action")
@@ -220,18 +199,87 @@ class DeviceController:
             if action == "control":
                 return await self._execute_single_command(command)
             elif action == "control_multiple":
-                return await self._execute_multiple_commands(command.get("commands", []))
-            else:
-                _LOGGER.debug(f"Unknown action: {action}")
-                return None
-
-        except json.JSONDecodeError as e:
-            _LOGGER.error(f"JSON decode error: {e}")
-            _LOGGER.debug(f"Response was: {response}")
+                return await self._execute_multiple_commands_parallel(command.get("commands", []))
+            elif action == "query":
+                query_type = command.get("query_type")
+                
+                if query_type == "sensor":
+                    return await self._execute_sensor_query(command)
+                elif query_type == "status":
+                    return await self._execute_status_query(command)
+            
             return None
+
         except Exception as e:
-            _LOGGER.error(f"Error executing control command: {e}")
-            return f"❌ Fehler beim Ausführen: {str(e)}"
+            _LOGGER.error(f"Error executing command: {e}")
+            return f"❌ Fehler: {str(e)}"
+
+    def _clean_json_response(self, response: str) -> str:
+        """Clean JSON from LLM response."""
+        clean = response.strip()
+        clean = re.sub(r'^```(?:json)?\s*', '', clean)
+        clean = re.sub(r'\s*```$', '', clean)
+        
+        json_match = re.search(r'\{[\s\S]*\}', clean)
+        if json_match:
+            return json_match.group()
+        
+        return clean
+
+    async def _execute_sensor_query(self, command: dict) -> str:
+        """Execute a sensor query."""
+        entity_ids = command.get("entity_ids", [])
+        
+        if not entity_ids:
+            return "❌ Keine Sensoren angegeben"
+        
+        controlled = self.get_controlled_entities(include_sensors=True)
+        results = []
+        
+        for entity_id in entity_ids:
+            if entity_id not in controlled:
+                continue
+            
+            state = self.hass.states.get(entity_id)
+            if state:
+                info = controlled[entity_id]
+                unit = info.get('unit', '')
+                results.append(f"{info['name']}: {state.state}{unit}")
+        
+        if not results:
+            return "❌ Keine Sensordaten gefunden"
+        
+        if len(results) == 1:
+            return f"📊 {results[0]}"
+        return "📊 Sensorwerte:\n" + "\n".join(f"  • {r}" for r in results)
+
+    async def _execute_status_query(self, command: dict) -> str:
+        """Execute status queries."""
+        sub_type = command.get("sub_type")
+        
+        controlled = self.get_controlled_entities(include_sensors=True)
+        analyzer = SensorAnalyzer(self.hass, controlled)
+        
+        query_map = {
+            "temperatures": analyzer.analyze_temperatures,
+            "humidity": analyzer.analyze_humidity,
+            "windows": analyzer.check_open_windows,
+            "powered_on": analyzer.get_powered_on_devices,
+            "battery": analyzer.check_battery_status,
+            "offline": analyzer.check_offline_devices,
+            "energy": analyzer.analyze_energy,
+            "climate_overview": analyzer.get_climate_overview,
+            "motion": analyzer.check_motion_sensors,
+            "air_quality": analyzer.analyze_air_quality,
+            "all_sensors": analyzer.get_all_sensors_summary,
+            "device_summary": analyzer.get_device_summary,
+            "last_activity": analyzer.get_last_activities,
+        }
+        
+        if sub_type in query_map:
+            return query_map[sub_type]()
+        
+        return f"❌ Unbekannter Status-Typ: {sub_type}"
 
     async def _execute_single_command(self, command: dict) -> str:
         """Execute a single control command."""
@@ -241,87 +289,105 @@ class DeviceController:
         service_data = command.get("data", {})
 
         if not all([domain, entity_id, service]):
-            return "❌ Fehler: Unvollständiger Befehl (domain, entity_id oder service fehlt)"
+            return "❌ Unvollständiger Befehl"
 
-        # Prüfe ob Entity gesteuert werden darf
-        controlled_entities = self.get_controlled_entities()
-        if entity_id not in controlled_entities:
-            # Versuche ähnliche Entity zu finden
-            suggestions = self._find_similar_entities(entity_id, controlled_entities)
+        controlled = self.get_controlled_entities(include_sensors=False)
+        if entity_id not in controlled:
+            suggestions = self._find_similar_entities(entity_id, controlled)
             if suggestions:
-                return f"❌ Das Gerät '{entity_id}' ist nicht zur Steuerung freigegeben.\n\nMeintest du vielleicht:\n{suggestions}"
-            return f"❌ Das Gerät '{entity_id}' ist nicht zur Steuerung freigegeben"
+                return f"❌ '{entity_id}' nicht verfügbar.\n\nMeintest du:\n{suggestions}"
+            return f"❌ '{entity_id}' nicht verfügbar"
 
-        # Bereite Service-Daten vor
         service_data["entity_id"] = entity_id
 
         try:
             await self.hass.services.async_call(
-                domain,
-                service,
-                service_data,
-                blocking=True
+                domain, service, service_data, blocking=True
             )
 
-            entity_state = self.hass.states.get(entity_id)
-            friendly_name = entity_state.attributes.get('friendly_name', entity_id) if entity_state else entity_id
-
-            _LOGGER.info(f"✓ Executed: {domain}.{service} on {entity_id} with data: {service_data}")
-            
-            # Baue Bestätigungsnachricht
-            confirmation = f"✅ {friendly_name} wurde erfolgreich gesteuert!"
-            
-            # Füge Details hinzu
-            if service == "turn_on":
-                if "brightness_pct" in service_data:
-                    confirmation += f"\n   Helligkeit: {service_data['brightness_pct']}%"
-                if "rgb_color" in service_data:
-                    confirmation += f"\n   Farbe: RGB{tuple(service_data['rgb_color'])}"
-                if "temperature" in service_data:
-                    confirmation += f"\n   Temperatur: {service_data['temperature']}°C"
-            
-            return confirmation
+            info = controlled[entity_id]
+            return self._build_confirmation(info['name'], service, service_data)
 
         except Exception as e:
-            _LOGGER.error(f"Error executing service {domain}.{service}: {e}")
-            return f"❌ Fehler bei {entity_id}: {str(e)}"
+            _LOGGER.error(f"Error: {e}")
+            return f"❌ Fehler: {str(e)}"
 
-    async def _execute_multiple_commands(self, commands: list[dict]) -> str:
-        """Execute multiple control commands."""
+    async def _execute_multiple_commands_parallel(self, commands: list[dict]) -> str:
+        """Execute multiple commands in parallel."""
         if not commands:
-            return "❌ Keine Befehle zum Ausführen"
+            return "❌ Keine Befehle"
         
-        results = []
-        success_count = 0
+        tasks = [self._execute_single_command_silent(cmd) for cmd in commands]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
         
-        for cmd in commands:
-            result = await self._execute_single_command(cmd)
-            if result and "✅" in result:
-                success_count += 1
-            results.append(result)
+        success = sum(1 for r in results if r is True)
+        
+        if success == len(commands):
+            return f"✅ {success} Gerät(e) erfolgreich gesteuert!"
+        elif success > 0:
+            return f"⚠️ {success} von {len(commands)} erfolgreich"
+        return f"❌ Fehler bei allen {len(commands)} Befehlen"
 
-        if success_count == len(commands):
-            return f"✅ Alle {len(commands)} Befehle erfolgreich ausgeführt!"
-        elif success_count > 0:
-            return f"⚠️ {success_count} von {len(commands)} Befehlen erfolgreich:\n" + "\n".join(results)
+    async def _execute_single_command_silent(self, command: dict) -> bool:
+        """Execute a single command silently."""
+        try:
+            domain = command.get("domain")
+            entity_id = command.get("entity_id")
+            service = command.get("service")
+            service_data = command.get("data", {})
+
+            if not all([domain, entity_id, service]):
+                return False
+
+            controlled = self.get_controlled_entities(include_sensors=False)
+            if entity_id not in controlled:
+                return False
+
+            service_data["entity_id"] = entity_id
+            
+            await self.hass.services.async_call(
+                domain, service, service_data, blocking=True
+            )
+            return True
+            
+        except Exception as e:
+            _LOGGER.error(f"Silent command error: {e}")
+            return False
+
+    def _build_confirmation(self, name: str, service: str, data: dict) -> str:
+        """Build a confirmation message."""
+        msg = f"✅ {name}"
+        
+        if service == "turn_on":
+            msg += " eingeschaltet"
+            if "brightness_pct" in data:
+                msg += f" ({data['brightness_pct']}%)"
+            if "rgb_color" in data:
+                color_name = self.color_manager.get_color_name(data['rgb_color'])
+                msg += f" ({color_name})"
+            if "color_temp_kelvin" in data:
+                msg += f" ({data['color_temp_kelvin']}K)"
+        elif service == "turn_off":
+            msg += " ausgeschaltet"
+        elif service == "toggle":
+            msg += " umgeschaltet"
+        elif service == "set_temperature":
+            msg += f" auf {data.get('temperature', '?')}°C"
         else:
-            return f"❌ Keine Befehle konnten ausgeführt werden:\n" + "\n".join(results)
-
-    def _find_similar_entities(self, entity_id: str, controlled_entities: dict) -> str:
-        """Find similar entity IDs for suggestions."""
-        suggestions = []
-        search_term = entity_id.lower().replace("_", " ").replace(".", " ")
+            msg += f" - {service}"
         
-        for eid, info in controlled_entities.items():
+        return msg
+
+    def _find_similar_entities(self, entity_id: str, controlled: dict) -> str:
+        """Find similar entity IDs."""
+        suggestions = []
+        search = entity_id.lower().replace("_", " ").replace(".", " ")
+        
+        for eid, info in controlled.items():
             eid_lower = eid.lower().replace("_", " ").replace(".", " ")
             name_lower = info['name'].lower()
             
-            # Prüfe auf Übereinstimmungen
-            if any(word in eid_lower or word in name_lower for word in search_term.split()):
+            if any(w in eid_lower or w in name_lower for w in search.split()):
                 suggestions.append(f"  • {info['name']} ({eid})")
         
-        return "\n".join(suggestions[:5])  # Max 5 Vorschläge
-
-    def is_entity_controlled(self, entity_id: str) -> bool:
-        """Check if an entity is controlled."""
-        return entity_id in self.get_controlled_entities()
+        return "\n".join(suggestions[:5])

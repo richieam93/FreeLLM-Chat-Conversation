@@ -1,15 +1,18 @@
 {
   "config": {
     "error": {
-      "invalid_auth": "Ungültige Authentifizierung"
+      "invalid_auth": "Ungültige Authentifizierung",
+      "cannot_connect": "Verbindung fehlgeschlagen",
+      "unknown": "Unbekannter Fehler"
     },
     "abort": {
+      "already_configured": "Bereits konfiguriert",
       "no_entities_available": "Keine steuerbaren Geräte verfügbar"
     },
     "step": {
       "user": {
         "title": "FreeLLM Chat",
-        "description": "Möchtest du FreeLLM Chat einrichten?"
+        "description": "Möchtest du FreeLLM Chat einrichten?\n\nDiese Integration ermöglicht:\n• 💬 Chat mit KI-Assistenten\n• 🏠 Smart Home Steuerung per Sprache\n• 📊 Sensor-Abfragen\n• 🌈 Farbsteuerung für Lichter"
       }
     }
   },
@@ -20,46 +23,150 @@
         "description": "Wähle einen Bereich zum Konfigurieren",
         "menu_options": {
           "chat_settings": "💬 Chat-Einstellungen",
-          "control_settings": "⚙️ Gerätesteuerung",
-          "entity_selection": "🏠 Geräte & Bereiche auswählen"
+          "control_settings": "⚙️ Gerätesteuerung & Sensoren",
+          "entity_selection": "🏠 Geräte & Bereiche auswählen",
+          "performance_settings": "⚡ Performance & Caching",
+          "advanced_settings": "🔧 Erweiterte Einstellungen"
         }
       },
       "chat_settings": {
         "title": "💬 Chat-Einstellungen",
-        "description": "Konfiguriere das normale Chat-Verhalten",
+        "description": "Konfiguriere das normale Chat-Verhalten der KI",
         "data": {
           "chat_model": "KI-Modell",
-          "prompt": "System-Prompt für Chat"
+          "chat_temperature": "Temperatur (Kreativität)",
+          "chat_max_tokens": "Maximale Antwortlänge (Tokens)",
+          "history_limit": "Chat-Verlauf Limit",
+          "prompt": "System-Prompt"
         },
         "data_description": {
-          "chat_model": "Wähle das KI-Modell für den Chat",
-          "prompt": "Der System-Prompt definiert das Verhalten der KI bei normalen Gesprächen"
+          "chat_model": "Wähle das KI-Modell für Konversationen",
+          "chat_temperature": "0.0 = sehr präzise und sachlich\n1.0 = ausgewogen kreativ\n2.0 = sehr kreativ und variabel",
+          "chat_max_tokens": "Bestimmt die maximale Länge der Antworten. Höhere Werte = längere Antworten möglich",
+          "history_limit": "Anzahl der gespeicherten Nachrichten im Konversationsverlauf",
+          "prompt": "Der System-Prompt definiert die Persönlichkeit und das Verhalten der KI"
         }
       },
       "control_settings": {
-        "title": "⚙️ Gerätesteuerung",
-        "description": "Aktiviere und konfiguriere die Gerätesteuerung per Sprache/Chat",
+        "title": "⚙️ Gerätesteuerung & Sensoren",
+        "description": "Konfiguriere die Smart Home Steuerung per Sprache/Chat",
         "data": {
           "enable_device_control": "Gerätesteuerung aktivieren",
-          "control_prompt": "System-Prompt für Steuerung"
+          "enable_sensors": "Sensor-Abfragen erlauben",
+          "control_temperature": "Temperatur (Genauigkeit)",
+          "control_max_tokens": "Maximale Antwortlänge (Tokens)",
+          "control_prompt": "Steuerungs-Prompt"
         },
         "data_description": {
-          "enable_device_control": "Ermöglicht die Steuerung von Smart Home Geräten über den Chat",
-          "control_prompt": "Der System-Prompt definiert wie Steuerungsbefehle interpretiert werden"
+          "enable_device_control": "Ermöglicht die Steuerung von Smart Home Geräten über den Chat (Lichter, Schalter, Heizung, etc.)",
+          "enable_sensors": "Ermöglicht Abfragen wie:\n• 'Wie warm ist es in der Küche?'\n• 'Welche Fenster sind offen?'\n• 'Batterie-Status'\n• 'Was ist eingeschaltet?'",
+          "control_temperature": "Niedriger = genauere Befehle\nEmpfohlen: 0.1-0.3 für zuverlässige Steuerung",
+          "control_max_tokens": "Für Steuerungsbefehle reichen meist 300-500 Tokens",
+          "control_prompt": "Der Prompt der definiert, wie Steuerungsbefehle interpretiert werden"
         }
       },
       "entity_selection": {
-        "title": "🏠 Geräte & Bereiche",
-        "description": "Wähle aus, welche Geräte über den Chat gesteuert werden können.\n\nDu kannst Bereiche (z.B. Wohnzimmer) und/oder einzelne Geräte auswählen.",
+        "title": "🏠 Geräte & Bereiche auswählen",
+        "description": "Wähle aus, welche Geräte über den Chat gesteuert werden können.\n\n**Tipp:** Du kannst Bereiche (z.B. Wohnzimmer) UND/ODER einzelne Geräte auswählen.\n\n⚠️ Nur ausgewählte Geräte sind steuerbar!",
         "data": {
           "selected_areas": "Bereiche auswählen",
           "selected_entities": "Einzelne Geräte auswählen"
         },
         "data_description": {
-          "selected_areas": "Alle Geräte in diesen Bereichen können gesteuert werden",
-          "selected_entities": "Diese spezifischen Geräte können gesteuert werden"
+          "selected_areas": "Alle Geräte und Sensoren in diesen Bereichen werden für die Steuerung freigegeben",
+          "selected_entities": "Zusätzliche einzelne Geräte die gesteuert werden können (auch wenn ihr Bereich nicht ausgewählt ist)"
+        }
+      },
+      "performance_settings": {
+        "title": "⚡ Performance & Caching",
+        "description": "Optimiere Geschwindigkeit und Ressourcenverbrauch",
+        "data": {
+          "enable_cache": "Antwort-Cache aktivieren",
+          "cache_duration": "Cache-Dauer (Sekunden)",
+          "optimize_prompts": "Prompts automatisch optimieren",
+          "compression_level": "Komprimierungsstufe"
+        },
+        "data_description": {
+          "enable_cache": "Speichert Antworten für identische Anfragen.\nBeschleunigt wiederholte Fragen erheblich!",
+          "cache_duration": "Wie lange Antworten im Cache gespeichert werden.\n• 60s = 1 Minute\n• 300s = 5 Minuten (empfohlen)\n• 3600s = 1 Stunde",
+          "optimize_prompts": "Kürzt Prompts automatisch für schnellere Antworten.\nBesonders nützlich bei vielen Geräten.",
+          "compression_level": "• Auto: Passt sich automatisch an Gerätezahl an (empfohlen)\n• Keine: Volle Prompts, langsamer\n• Mittel: Balanciert\n• Hoch: Minimale Prompts, schnellste Antworten"
+        }
+      },
+      "advanced_settings": {
+        "title": "🔧 Erweiterte Einstellungen",
+        "description": "Zusätzliche Konfigurationsoptionen für fortgeschrittene Benutzer",
+        "data": {
+          "enable_statistics": "Statistiken sammeln",
+          "timeout": "Timeout (Sekunden)",
+          "retry_count": "Wiederholungsversuche bei Fehler"
+        },
+        "data_description": {
+          "enable_statistics": "Sammelt anonyme Nutzungsstatistiken wie:\n• Cache-Trefferrate\n• Durchschnittliche Antwortzeit\n• Häufigste Befehle",
+          "timeout": "Maximale Wartezeit für eine LLM-Antwort.\n• 30s empfohlen für normale Nutzung\n• Erhöhen bei langsamer Internetverbindung",
+          "retry_count": "Wie oft bei einem Fehler automatisch wiederholt wird.\n• 0 = Keine Wiederholung\n• 2-3 = Empfohlen für zuverlässige Steuerung"
         }
       }
     }
+  },
+  "services": {
+    "clear_cache": {
+      "name": "Cache leeren",
+      "description": "Löscht den Antwort-Cache"
+    },
+    "get_statistics": {
+      "name": "Statistiken abrufen",
+      "description": "Zeigt Nutzungsstatistiken an"
+    }
+  },
+  "selector": {
+    "compression_level": {
+      "options": {
+        "auto": "🔄 Automatisch (empfohlen)",
+        "none": "📄 Keine Komprimierung",
+        "medium": "📊 Mittel",
+        "high": "⚡ Hoch (schnellste)"
+      }
+    }
+  },
+  "state": {
+    "unavailable": "Nicht verfügbar",
+    "unknown": "Unbekannt"
+  },
+  "entity": {
+    "sensor": {
+      "cache_hit_rate": {
+        "name": "Cache-Trefferrate"
+      },
+      "total_requests": {
+        "name": "Gesamtanfragen"
+      },
+      "average_response_time": {
+        "name": "Durchschn. Antwortzeit"
+      }
+    }
+  },
+  "exceptions": {
+    "connection_error": "Verbindung zum LLM-Server fehlgeschlagen",
+    "timeout_error": "Zeitüberschreitung bei der Anfrage",
+    "invalid_response": "Ungültige Antwort vom Server",
+    "entity_not_found": "Gerät nicht gefunden: {entity_id}",
+    "service_call_failed": "Dienstaufruf fehlgeschlagen: {error}"
+  },
+  "common": {
+    "on": "An",
+    "off": "Aus",
+    "open": "Offen",
+    "closed": "Geschlossen",
+    "online": "Online",
+    "offline": "Offline",
+    "temperature": "Temperatur",
+    "humidity": "Luftfeuchtigkeit",
+    "brightness": "Helligkeit",
+    "color": "Farbe",
+    "area": "Bereich",
+    "device": "Gerät",
+    "sensor": "Sensor",
+    "status": "Status"
   }
 }
