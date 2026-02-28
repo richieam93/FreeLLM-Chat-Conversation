@@ -24,6 +24,8 @@ class PromptOptimizer:
         """Optimize prompt based on entity count and settings."""
         level = self._determine_level(entity_count)
         
+        _LOGGER.debug(f"Optimizing prompt - Level: {level}, Entities: {entity_count}")
+        
         if level == "none":
             return original_prompt
         elif level == "medium":
@@ -50,8 +52,8 @@ class PromptOptimizer:
         skip_until_empty = False
         
         for line in lines:
-            # Skip example blocks
-            if not include_examples and ('Beispiel' in line or 'BEISPIEL' in line):
+            # Skip example blocks if not needed
+            if not include_examples and ('Beispiel' in line or 'BEISPIEL' in line or 'Example' in line):
                 skip_until_empty = True
                 continue
             
@@ -62,9 +64,13 @@ class PromptOptimizer:
             
             # Remove verbose explanations
             if any(phrase in line.lower() for phrase in [
-                'wichtig:', 'hinweis:', 'note:', 'beachte:'
+                'wichtig:', 'hinweis:', 'note:', 'beachte:', 'tipp:'
             ]):
-                continue
+                # Behalte die Zeile aber kürze sie
+                if ':' in line:
+                    parts = line.split(':', 1)
+                    if len(parts[1]) > 50:
+                        line = parts[0] + ':' + parts[1][:50] + '...'
             
             compressed.append(line)
         
@@ -78,10 +84,12 @@ Control: {"action":"control","domain":"D","entity_id":"ID","service":"S","data":
 Multiple: {"action":"control_multiple","commands":[...]}
 Query: {"action":"query","query_type":"status","sub_type":"TYPE"}
 
-Types: temperatures,humidity,windows,powered_on,battery,offline,energy
+Status Types: temperatures, humidity, windows, powered_on, battery, offline, energy, climate_overview, motion, air_quality, all_sensors, device_summary, last_activity
 
-Colors: rot=[255,0,0],grün=[0,255,0],blau=[0,0,255],weiß=[255,255,255],warmweiß=[255,244,229]
-Brightness: "data":{"brightness_pct":50}"""
+Colors RGB: rot=[255,0,0], grün=[0,255,0], blau=[0,0,255], gelb=[255,255,0], weiß=[255,255,255], warmweiß=[255,244,229], orange=[255,165,0], pink=[255,105,180], lila=[128,0,128]
+
+Brightness: "data":{"brightness_pct":50}
+Color Temp: "data":{"color_temp_kelvin":2700}"""
 
     def compress_entity_list(
         self, 
@@ -106,15 +114,26 @@ Brightness: "data":{"brightness_pct":50}"""
             
             # Sehr kompakte Info
             short_id = entity_id.split('.')[-1]
-            state_short = info['state'][:3] if len(info['state']) > 3 else info['state']
+            state = info['state']
+            state_short = state[:3] if len(state) > 3 else state
             
             by_domain[domain][area].append(f"{info['name']}:{short_id}[{state_short}]")
         
         # Erstelle kompakten String
         result = "\n\n=== DEVICES ===\n"
         
-        icons = {'light': '💡', 'switch': '🔌', 'climate': '🌡️', 
-                 'sensor': '📊', 'binary_sensor': '⚡', 'cover': '🪟'}
+        icons = {
+            'light': '💡', 
+            'switch': '🔌', 
+            'climate': '🌡️', 
+            'sensor': '📊', 
+            'binary_sensor': '⚡', 
+            'cover': '🪟',
+            'media_player': '🔊',
+            'fan': '🌀',
+            'vacuum': '🧹',
+            'lock': '🔒'
+        }
         
         for domain in sorted(by_domain.keys()):
             icon = icons.get(domain, '📦')
@@ -125,8 +144,9 @@ Brightness: "data":{"brightness_pct":50}"""
                 devices = by_domain[domain][area][:max_per_area]
                 result += f"  {area}: {', '.join(devices)}\n"
                 
-                if len(by_domain[domain][area]) > max_per_area:
-                    result += f"    +{len(by_domain[domain][area]) - max_per_area} more\n"
+                remaining = len(by_domain[domain][area]) - max_per_area
+                if remaining > 0:
+                    result += f"    +{remaining} more\n"
         
         return result
 
@@ -144,32 +164,36 @@ Brightness: "data":{"brightness_pct":50}"""
         }
         
         # Steuerungsintent
-        if any(w in input_lower for w in ['schalte', 'mach', 'turn', 'switch']):
+        control_words = ['schalte', 'mach', 'turn', 'switch', 'dimme', 'stelle']
+        if any(w in input_lower for w in control_words):
             intent['type'] = 'control'
-            if 'an' in input_lower or 'ein' in input_lower or 'on' in input_lower:
+            if any(w in input_lower for w in ['an', 'ein', 'on']):
                 intent['action'] = 'turn_on'
-            elif 'aus' in input_lower or 'off' in input_lower:
+            elif any(w in input_lower for w in ['aus', 'off']):
                 intent['action'] = 'turn_off'
         
         # Abfrageintent
-        elif any(w in input_lower for w in ['temperatur', 'wie warm', 'status', 'was ist', 'zeig']):
+        query_words = ['temperatur', 'wie warm', 'status', 'was ist', 'zeig', 'welche']
+        if any(w in input_lower for w in query_words):
             intent['type'] = 'query'
             
-            if 'temperatur' in input_lower or 'warm' in input_lower:
+            if any(w in input_lower for w in ['temperatur', 'warm', 'kalt', 'grad']):
                 intent['action'] = 'temperatures'
-            elif 'feucht' in input_lower:
+            elif any(w in input_lower for w in ['feucht', 'humidity']):
                 intent['action'] = 'humidity'
-            elif 'fenster' in input_lower or 'tür' in input_lower:
+            elif any(w in input_lower for w in ['fenster', 'tür', 'offen']):
                 intent['action'] = 'windows'
-            elif 'eingeschaltet' in input_lower or 'an' in input_lower:
+            elif any(w in input_lower for w in ['eingeschaltet', 'an', 'aktiv']):
                 intent['action'] = 'powered_on'
             elif 'batterie' in input_lower:
                 intent['action'] = 'battery'
             elif 'offline' in input_lower:
                 intent['action'] = 'offline'
+            elif any(w in input_lower for w in ['energie', 'strom', 'verbrauch']):
+                intent['action'] = 'energy'
         
         # Farbextraktion
-        colors = ['rot', 'grün', 'blau', 'gelb', 'weiß', 'orange', 'pink', 'lila']
+        colors = ['rot', 'grün', 'blau', 'gelb', 'weiß', 'orange', 'pink', 'lila', 'violett', 'cyan', 'türkis']
         for color in colors:
             if color in input_lower:
                 intent['color'] = color
@@ -179,6 +203,11 @@ Brightness: "data":{"brightness_pct":50}"""
         brightness_match = re.search(r'(\d+)\s*%', input_lower)
         if brightness_match:
             intent['value'] = int(brightness_match.group(1))
+        
+        # Temperatur-Extraktion (für Klima)
+        temp_match = re.search(r'(\d+)\s*(?:°|grad)', input_lower)
+        if temp_match and intent['type'] != 'query':
+            intent['value'] = int(temp_match.group(1))
         
         return intent
 

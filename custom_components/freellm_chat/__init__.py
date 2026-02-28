@@ -30,6 +30,10 @@ from .const import (
     CONF_ENABLE_CACHE,
     CONF_CACHE_DURATION,
     CONF_OPTIMIZE_PROMPTS,
+    CONF_COMPRESSION_LEVEL,
+    CONF_HISTORY_LIMIT,
+    CONF_TIMEOUT,
+    CONF_RETRY_COUNT,
     DEFAULT_CHAT_MODEL,
     DEFAULT_PROMPT,
     DEFAULT_CHAT_TEMPERATURE,
@@ -42,6 +46,10 @@ from .const import (
     DEFAULT_ENABLE_CACHE,
     DEFAULT_CACHE_DURATION,
     DEFAULT_OPTIMIZE_PROMPTS,
+    DEFAULT_COMPRESSION_LEVEL,
+    DEFAULT_HISTORY_LIMIT,
+    DEFAULT_TIMEOUT,
+    DEFAULT_RETRY_COUNT,
     DOMAIN,
     LLM7_BASE_URL,
 )
@@ -78,7 +86,8 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         self.cache = ResponseCache(max_age_seconds=cache_duration)
         
         # Prompt Optimizer
-        self.optimizer = PromptOptimizer()
+        compression_level = entry.options.get(CONF_COMPRESSION_LEVEL, DEFAULT_COMPRESSION_LEVEL)
+        self.optimizer = PromptOptimizer(compression_level=compression_level)
 
     @property
     def attribution(self):
@@ -130,6 +139,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
             "zeig mir", "was ist", "wie ist", "welche",
             "fenster", "tür", "offen", "geschlossen",
             "eingeschaltet", "ausgeschaltet", "batterie", "offline",
+            "energie", "verbrauch", "strom",
         ]
         
         text_lower = text.lower()
@@ -141,6 +151,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         conversation_id: str
     ) -> conversation.ConversationResult:
         """Handle device control and sensor query requests."""
+        # Hole alle Einstellungen
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         control_prompt = self.entry.options.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
         control_temperature = self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE)
@@ -150,29 +161,37 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         enable_sensors = self.entry.options.get(CONF_ENABLE_SENSORS, DEFAULT_ENABLE_SENSORS)
         enable_cache = self.entry.options.get(CONF_ENABLE_CACHE, DEFAULT_ENABLE_CACHE)
         optimize_prompts = self.entry.options.get(CONF_OPTIMIZE_PROMPTS, DEFAULT_OPTIMIZE_PROMPTS)
+        timeout = self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+        retry_count = self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
 
+        # Controller initialisieren
         controller = DeviceController(
             self.hass, selected_entities, selected_areas, enable_sensors
         )
         
+        # Prüfe ob Geräte verfügbar
         controlled = controller.get_controlled_entities(include_sensors=True)
         if not controlled:
             return self._create_response(
-                "⚠️ Keine Geräte konfiguriert.",
+                "⚠️ Keine Geräte konfiguriert. Bitte wähle zuerst Geräte oder Bereiche in den Einstellungen aus.",
                 user_input.language,
                 conversation_id
             )
         
-        # Optimiere Prompt bei vielen Geräten
+        # Prompt erstellen
         if optimize_prompts:
-            control_prompt = self.optimizer.simplify_control_prompt(
-                control_prompt, len(controlled)
+            # Optimierten Prompt verwenden
+            optimized_prompt = self.optimizer.optimize_prompt(
+                control_prompt, 
+                len(controlled),
+                include_examples=len(controlled) < 30
             )
             entity_context = self.optimizer.compress_entity_list(controlled)
         else:
+            optimized_prompt = control_prompt
             entity_context = controller.generate_context()
         
-        full_prompt = control_prompt + entity_context
+        full_prompt = optimized_prompt + entity_context
 
         # Prüfe Cache
         cached_response = None
@@ -182,38 +201,65 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         if cached_response:
             _LOGGER.debug("Using cached response")
             response_text = cached_response
+            
+            # Bei gecachten Steuerungsbefehlen erneut ausführen
+            result = await controller.execute_command(cached_response)
+            if result:
+                response_text = result
         else:
-            try:
-                messages = [
-                    {"role": "system", "content": full_prompt},
-                    {"role": "user", "content": user_input.text}
-                ]
+            # LLM-Anfrage mit Retry
+            response_text = None
+            last_error = None
+            
+            for attempt in range(retry_count + 1):
+                try:
+                    messages = [
+                        {"role": "system", "content": full_prompt},
+                        {"role": "user", "content": user_input.text}
+                    ]
 
-                response_text = await self._async_query_llm(
-                    model_name, 
-                    messages,
-                    temperature=control_temperature,
-                    max_tokens=control_max_tokens
-                )
-                
-                _LOGGER.debug(f"LLM Response: {response_text}")
-
-                result = await controller.execute_command(response_text)
-
-                if result:
-                    response_text = result
+                    response_text = await self._async_query_llm(
+                        model_name, 
+                        messages,
+                        temperature=control_temperature,
+                        max_tokens=control_max_tokens,
+                        timeout=timeout
+                    )
                     
-                    # Cache speichern
-                    if enable_cache:
-                        self.cache.set(full_prompt, user_input.text, response_text)
-                else:
-                    response_text = "Befehl nicht verstanden. Beispiel: 'Schalte das Licht an'"
+                    _LOGGER.debug(f"LLM Response: {response_text[:200] if response_text else 'None'}...")
+                    break  # Erfolg, Schleife beenden
+                    
+                except Exception as e:
+                    last_error = e
+                    _LOGGER.warning(f"Attempt {attempt + 1} failed: {e}")
+                    if attempt < retry_count:
+                        await asyncio.sleep(1)  # Kurze Pause vor Retry
 
-            except asyncio.TimeoutError:
-                response_text = "⏱️ Zeitüberschreitung."
-            except Exception as e:
-                _LOGGER.error(f"Error: {e}")
-                response_text = f"❌ Fehler: {str(e)}"
+            if response_text is None:
+                return self._create_response(
+                    f"❌ Fehler nach {retry_count + 1} Versuchen: {last_error}",
+                    user_input.language,
+                    conversation_id
+                )
+
+            # Befehl ausführen
+            result = await controller.execute_command(response_text)
+
+            if result:
+                response_text = result
+                
+                # Cache speichern (nur für Abfragen, nicht für Steuerungsbefehle)
+                if enable_cache and "query" in response_text.lower()[:50]:
+                    self.cache.set(full_prompt, user_input.text, response_text)
+            else:
+                response_text = (
+                    "Ich konnte den Befehl nicht verstehen.\n\n"
+                    "Beispiele:\n"
+                    "• 'Schalte das Licht an'\n"
+                    "• 'Mache die Küche rot'\n"
+                    "• 'Temperaturen in allen Räumen'\n"
+                    "• 'Was ist eingeschaltet?'"
+                )
 
         return self._create_response(response_text, user_input.language, conversation_id)
 
@@ -227,6 +273,9 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         raw_prompt = self.entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
         chat_temperature = self.entry.options.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE)
         chat_max_tokens = self.entry.options.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS)
+        history_limit = self.entry.options.get(CONF_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT)
+        timeout = self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+        retry_count = self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
 
         try:
             prompt = template.Template(raw_prompt, self.hass).async_render(
@@ -238,32 +287,48 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 f"Template-Fehler: {err}", user_input.language, conversation_id
             )
 
+        # Konversationsverlauf verwalten
         if conversation_id not in self.history:
             self.history[conversation_id] = [{"role": "system", "content": prompt}]
 
         self.history[conversation_id].append({"role": "user", "content": user_input.text})
 
         # Limit history
-        if len(self.history[conversation_id]) > 21:
+        max_messages = history_limit + 1  # +1 für System-Prompt
+        if len(self.history[conversation_id]) > max_messages:
             self.history[conversation_id] = (
                 [self.history[conversation_id][0]] +
-                self.history[conversation_id][-20:]
+                self.history[conversation_id][-(history_limit):]
             )
 
-        try:
-            response_text = await self._async_query_llm(
-                model_name, 
-                self.history[conversation_id],
-                temperature=chat_temperature,
-                max_tokens=chat_max_tokens
-            )
-            self.history[conversation_id].append({
-                "role": "assistant", 
-                "content": response_text
-            })
-        except Exception as e:
-            _LOGGER.error(f"Error: {e}")
-            response_text = f"❌ Fehler: {str(e)}"
+        # LLM-Anfrage mit Retry
+        response_text = None
+        last_error = None
+        
+        for attempt in range(retry_count + 1):
+            try:
+                response_text = await self._async_query_llm(
+                    model_name, 
+                    self.history[conversation_id],
+                    temperature=chat_temperature,
+                    max_tokens=chat_max_tokens,
+                    timeout=timeout
+                )
+                
+                self.history[conversation_id].append({
+                    "role": "assistant", 
+                    "content": response_text
+                })
+                break  # Erfolg
+                
+            except Exception as e:
+                last_error = e
+                _LOGGER.warning(f"Chat attempt {attempt + 1} failed: {e}")
+                if attempt < retry_count:
+                    await asyncio.sleep(1)
+
+        if response_text is None:
+            response_text = f"❌ Fehler: {last_error}"
 
         return self._create_response(response_text, user_input.language, conversation_id)
 
@@ -272,9 +337,10 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         model_name: str, 
         messages: list[dict],
         temperature: float = 0.7,
-        max_tokens: int = 1000
+        max_tokens: int = 1000,
+        timeout: int = 30
     ) -> str:
-        """Send a query to the LLM."""
+        """Send a query to the LLM using async HTTP."""
         url = f"{LLM7_BASE_URL}/chat/completions"
         
         payload = {
@@ -284,24 +350,28 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
             "max_tokens": max_tokens,
         }
 
+        _LOGGER.debug(f"LLM Request - Model: {model_name}, Temp: {temperature}, Tokens: {max_tokens}")
+
         session = async_get_clientsession(self.hass)
         
         try:
-            async with asyncio.timeout(30):
+            async with asyncio.timeout(timeout):
                 async with session.post(url, json=payload) as response:
                     response.raise_for_status()
                     data = await response.json()
 
             if "choices" in data and len(data["choices"]) > 0:
-                return data["choices"][0]["message"]["content"].strip()
+                content = data["choices"][0].get("message", {}).get("content", "")
+                return content.strip() if content else str(data)
             
+            _LOGGER.warning(f"Unexpected API response structure: {data}")
             return str(data)
 
         except asyncio.TimeoutError:
-            _LOGGER.error("LLM timeout")
-            raise
+            _LOGGER.error(f"LLM request timed out after {timeout}s")
+            raise Exception(f"Zeitüberschreitung ({timeout}s)")
         except aiohttp.ClientError as e:
-            _LOGGER.error(f"LLM Error: {e}")
+            _LOGGER.error(f"LLM API Error: {e}")
             raise
 
     def _create_response(
