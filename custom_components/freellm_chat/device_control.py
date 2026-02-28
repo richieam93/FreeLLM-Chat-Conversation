@@ -7,6 +7,7 @@ import json
 import re
 from typing import Any
 from datetime import datetime, timedelta
+from collections import defaultdict
 
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import area_registry as ar, entity_registry as er, device_registry as dr
@@ -46,7 +47,6 @@ class DeviceController:
 
     def get_controlled_entities(self, include_sensors: bool = True) -> dict[str, dict]:
         """Get all entities that can be controlled based on selection."""
-        # Cache prüfen
         now = datetime.now()
         cache_key = f"{hash(tuple(self.selected_entities))}_{hash(tuple(self.selected_areas))}_{include_sensors}"
         
@@ -70,12 +70,10 @@ class DeviceController:
             if state.domain not in allowed_domains:
                 continue
 
-            # Prüfe ob Entity direkt ausgewählt
             if entity_id in self.selected_entities:
                 controlled_entities[entity_id] = self._build_entity_info(state)
                 continue
 
-            # Prüfe Bereich
             if self.selected_areas:
                 entity_entry = self._entity_registry.async_get(entity_id)
                 
@@ -90,7 +88,6 @@ class DeviceController:
                     if area_id and area_id in self.selected_areas:
                         controlled_entities[entity_id] = self._build_entity_info(state)
 
-        # Cache aktualisieren
         if DeviceController._entity_cache is None:
             DeviceController._entity_cache = {}
         DeviceController._entity_cache[cache_key] = controlled_entities
@@ -190,7 +187,6 @@ class DeviceController:
         _LOGGER.debug(f"Parsing response: {response[:200]}...")
         
         try:
-            # Bereinige und parse JSON
             command = self._parse_llm_response(response)
             
             if command is None:
@@ -201,10 +197,9 @@ class DeviceController:
 
             action = command.get("action", "").lower()
             
-            # Korrigiere abgekürzte Actions
             if action in ["cont", "ctrl", "control", "c"]:
                 action = "control"
-            elif action in ["query", "q", "ask", "get"]:
+            elif action in ["query", "q", "ask", "get", "status", "info"]:
                 action = "query"
             elif action in ["control_multiple", "multi", "multiple", "batch"]:
                 action = "control_multiple"
@@ -225,7 +220,6 @@ class DeviceController:
 
     def _parse_llm_response(self, response: str) -> dict | None:
         """Parse LLM response with flexible JSON handling."""
-        # Bereinige Response
         clean = response.strip()
         
         # Entferne Markdown Code-Blöcke
@@ -233,21 +227,9 @@ class DeviceController:
         clean = re.sub(r'\s*```$', '', clean)
         clean = clean.strip()
         
-        # Versuche JSON zu finden und zu parsen
-        json_patterns = [
-            r'\{[^{}]*\}',  # Einfaches JSON ohne verschachtelte Objekte
-            r'\{.*?\}',      # Minimal greedy
-        ]
-        
-        for pattern in json_patterns:
-            matches = re.findall(pattern, clean, re.DOTALL)
-            for match in matches:
-                try:
-                    parsed = json.loads(match)
-                    if isinstance(parsed, dict) and ("action" in parsed or "entity_id" in parsed):
-                        return parsed
-                except json.JSONDecodeError:
-                    continue
+        # Entferne <think>...</think> Blöcke (DeepSeek R1 etc.)
+        clean = re.sub(r'<think>.*?</think>', '', clean, flags=re.DOTALL)
+        clean = clean.strip()
         
         # Versuche gesamte Response als JSON
         try:
@@ -257,12 +239,42 @@ class DeviceController:
         except json.JSONDecodeError:
             pass
         
+        # Finde JSON-Objekte (auch verschachtelte)
+        json_objects = self._extract_json_objects(clean)
+        for obj in json_objects:
+            try:
+                parsed = json.loads(obj)
+                if isinstance(parsed, dict) and ("action" in parsed or "entity_id" in parsed):
+                    return parsed
+            except json.JSONDecodeError:
+                continue
+        
         # Letzter Versuch: Repariere kaputtes JSON
         repaired = self._repair_json(clean)
         if repaired:
             return repaired
         
         return None
+
+    def _extract_json_objects(self, text: str) -> list[str]:
+        """Extract JSON objects from text, handling nested braces."""
+        objects = []
+        i = 0
+        while i < len(text):
+            if text[i] == '{':
+                depth = 0
+                start = i
+                while i < len(text):
+                    if text[i] == '{':
+                        depth += 1
+                    elif text[i] == '}':
+                        depth -= 1
+                        if depth == 0:
+                            objects.append(text[start:i+1])
+                            break
+                    i += 1
+            i += 1
+        return objects
 
     def _repair_json(self, text: str) -> dict | None:
         """Try to repair broken JSON."""
@@ -271,7 +283,6 @@ class DeviceController:
             action_match = re.search(r'"action"\s*:\s*"(\w+)"', text)
             action = action_match.group(1) if action_match else None
             
-            # Korrigiere abgekürzte Actions
             if action in ["cont", "ctrl"]:
                 action = "control"
             
@@ -279,10 +290,8 @@ class DeviceController:
             entity_match = re.search(r'"entity_id"\s*:\s*"([^"]+)"', text)
             entity_id = entity_match.group(1) if entity_match else None
             
-            # Finde Farbe (verschiedene Formate)
+            # Finde Farbe
             rgb_color = None
-            
-            # Format: "rgb":[0,255,0] oder "color":[0,255,0] oder "rgb_color":[0,255,0]
             color_match = re.search(r'"(?:color|rgb_color|rgb)"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', text)
             if color_match:
                 rgb_color = [int(color_match.group(1)), int(color_match.group(2)), int(color_match.group(3))]
@@ -305,14 +314,21 @@ class DeviceController:
             
             # Für Query
             if action == "query":
-                # Suche nach type/sub_type
-                type_match = re.search(r'"(?:type|sub_type)"\s*:\s*"(\w+)"', text)
+                type_match = re.search(r'"(?:type|sub_type|query_type)"\s*:\s*"([^"]+)"', text)
                 query_type = type_match.group(1) if type_match else "temperatures"
-                return {
+                
+                # Suche nach area/room Filter
+                area_match = re.search(r'"(?:area|room|raum|bereich)"\s*:\s*"([^"]+)"', text)
+                area_filter = area_match.group(1) if area_match else None
+                
+                result = {
                     "action": "query",
                     "query_type": "status",
                     "sub_type": query_type
                 }
+                if area_filter:
+                    result["area"] = area_filter
+                return result
             
             # Für Control
             if entity_id:
@@ -361,7 +377,38 @@ class DeviceController:
         if not sub_type:
             sub_type = command.get("type", "")
         
-        _LOGGER.debug(f"Query - query_type: {query_type}, sub_type: {sub_type}")
+        # Fallback: query_type als sub_type verwenden
+        if not sub_type and query_type and query_type != "status":
+            sub_type = query_type
+        
+        # Area/Room Filter extrahieren
+        area_filter = (
+            command.get("area") or 
+            command.get("room") or 
+            command.get("raum") or 
+            command.get("bereich") or
+            None
+        )
+        
+        # Auch aus data extrahieren
+        if not area_filter and "data" in command:
+            data = command.get("data", {})
+            if isinstance(data, dict):
+                area_filter = (
+                    data.get("area") or 
+                    data.get("room") or 
+                    data.get("raum") or
+                    None
+                )
+        
+        # Area aus sub_type extrahieren (z.B. "temperature_wohnzimmer" oder "temperatures wohnzimmer")
+        if not area_filter and sub_type:
+            area_filter = self._extract_area_from_query(sub_type)
+            if area_filter:
+                # Bereinige sub_type
+                sub_type = self._clean_sub_type(sub_type, area_filter)
+        
+        _LOGGER.debug(f"Query - query_type: {query_type}, sub_type: '{sub_type}', area_filter: '{area_filter}'")
         
         # Wenn query_type == "sensor", dann entity_ids abfragen
         if query_type == "sensor":
@@ -370,13 +417,62 @@ class DeviceController:
         # Status-Abfragen
         effective_type = sub_type or query_type
         if effective_type:
-            return await self._execute_status_query(effective_type)
+            return await self._execute_status_query(effective_type, area_filter)
         
-        return "❌ Unbekannter Abfragetyp"
+        # Fallback: Alle Sensoren anzeigen
+        return await self._execute_status_query("all_sensors", area_filter)
+
+    def _extract_area_from_query(self, sub_type: str) -> str | None:
+        """Extract area name from sub_type string."""
+        controlled = self.get_controlled_entities(include_sensors=True)
+        
+        # Sammle alle verfügbaren Bereichsnamen
+        available_areas = set()
+        for info in controlled.values():
+            if info['area']:
+                available_areas.add(info['area'].lower())
+        
+        if not available_areas:
+            return None
+        
+        sub_type_lower = sub_type.lower()
+        
+        # Prüfe ob ein Bereichsname im sub_type enthalten ist
+        for area_name in sorted(available_areas, key=len, reverse=True):
+            # Prüfe verschiedene Trennzeichen
+            if area_name in sub_type_lower:
+                # Finde den originalen Bereichsnamen (mit korrekter Groß-/Kleinschreibung)
+                for info in controlled.values():
+                    if info['area'] and info['area'].lower() == area_name:
+                        return info['area']
+        
+        return None
+
+    def _clean_sub_type(self, sub_type: str, area_name: str) -> str:
+        """Remove area name from sub_type and clean it up."""
+        # Entferne den Bereichsnamen
+        cleaned = sub_type.lower().replace(area_name.lower(), '')
+        
+        # Entferne Trennzeichen
+        cleaned = cleaned.strip('_ -/')
+        cleaned = re.sub(r'[_\-/]+', '', cleaned)
+        cleaned = cleaned.strip()
+        
+        # Wenn nichts übrig bleibt, verwende "temperatures" als Standard
+        if not cleaned:
+            cleaned = "temperatures"
+        
+        return cleaned
 
     async def _execute_sensor_query(self, command: dict) -> str:
         """Execute a sensor query."""
         entity_ids = command.get("entity_ids", [])
+        
+        # Auch einzelne entity_id unterstützen
+        if not entity_ids:
+            single_id = command.get("entity_id")
+            if single_id:
+                entity_ids = [single_id]
         
         if not entity_ids:
             return "❌ Keine Sensoren angegeben"
@@ -392,7 +488,8 @@ class DeviceController:
             if state:
                 info = controlled[entity_id]
                 unit = info.get('unit', '')
-                results.append(f"{info['name']}: {state.state}{unit}")
+                area = f" ({info['area']})" if info['area'] else ""
+                results.append(f"{info['name']}{area}: {state.state}{unit}")
         
         if not results:
             return "❌ Keine Sensordaten gefunden"
@@ -401,11 +498,41 @@ class DeviceController:
             return f"📊 {results[0]}"
         return "📊 Sensorwerte:\n" + "\n".join(f"  • {r}" for r in results)
 
-    async def _execute_status_query(self, sub_type: str) -> str:
-        """Execute status queries."""
-        _LOGGER.debug(f"Executing status query: {sub_type}")
+    async def _execute_status_query(self, sub_type: str, area_filter: str | None = None) -> str:
+        """Execute status queries with optional area filter."""
+        _LOGGER.debug(f"Executing status query: '{sub_type}', area_filter: '{area_filter}'")
         
         controlled = self.get_controlled_entities(include_sensors=True)
+        
+        # Filtere nach Bereich wenn angegeben
+        if area_filter:
+            filtered = {}
+            area_filter_lower = area_filter.lower()
+            
+            for entity_id, info in controlled.items():
+                entity_area = (info.get('area') or '').lower()
+                
+                # Flexible Bereichs-Übereinstimmung
+                if (area_filter_lower in entity_area or 
+                    entity_area in area_filter_lower or
+                    area_filter_lower == entity_area):
+                    filtered[entity_id] = info
+            
+            if not filtered:
+                # Versuche partielle Übereinstimmung
+                for entity_id, info in controlled.items():
+                    entity_area = (info.get('area') or '').lower()
+                    # Teile den Bereichsnamen in Wörter und prüfe einzeln
+                    area_words = area_filter_lower.split()
+                    if any(word in entity_area for word in area_words):
+                        filtered[entity_id] = info
+            
+            if filtered:
+                controlled = filtered
+                _LOGGER.debug(f"Filtered to {len(controlled)} entities in area '{area_filter}'")
+            else:
+                _LOGGER.warning(f"No entities found for area '{area_filter}', using all")
+        
         analyzer = SensorAnalyzer(self.hass, controlled)
         
         # Mapping mit vielen Alternativen
@@ -416,11 +543,16 @@ class DeviceController:
             "temp": analyzer.analyze_temperatures,
             "temperatur": analyzer.analyze_temperatures,
             "temperaturen": analyzer.analyze_temperatures,
+            "wie_warm": analyzer.analyze_temperatures,
+            "wiewarm": analyzer.analyze_temperatures,
+            "wie_kalt": analyzer.analyze_temperatures,
+            "grad": analyzer.analyze_temperatures,
             
             # Luftfeuchtigkeit
             "humidity": analyzer.analyze_humidity,
             "feuchtigkeit": analyzer.analyze_humidity,
             "luftfeuchtigkeit": analyzer.analyze_humidity,
+            "luftfeuchte": analyzer.analyze_humidity,
             
             # Fenster/Türen
             "windows": analyzer.check_open_windows,
@@ -428,6 +560,8 @@ class DeviceController:
             "doors": analyzer.check_open_windows,
             "türen": analyzer.check_open_windows,
             "tueren": analyzer.check_open_windows,
+            "tür": analyzer.check_open_windows,
+            "door": analyzer.check_open_windows,
             
             # Eingeschaltete Geräte
             "powered_on": analyzer.get_powered_on_devices,
@@ -435,6 +569,9 @@ class DeviceController:
             "eingeschaltet": analyzer.get_powered_on_devices,
             "aktiv": analyzer.get_powered_on_devices,
             "an": analyzer.get_powered_on_devices,
+            "status": analyzer.get_powered_on_devices,
+            "was_ist_an": analyzer.get_powered_on_devices,
+            "wasistan": analyzer.get_powered_on_devices,
             
             # Batterie
             "battery": analyzer.check_battery_status,
@@ -446,6 +583,7 @@ class DeviceController:
             "offline": analyzer.check_offline_devices,
             "unavailable": analyzer.check_offline_devices,
             "nicht_verfügbar": analyzer.check_offline_devices,
+            "nichtverfügbar": analyzer.check_offline_devices,
             
             # Energie
             "energy": analyzer.analyze_energy,
@@ -459,17 +597,21 @@ class DeviceController:
             "climate": analyzer.get_climate_overview,
             "klima": analyzer.get_climate_overview,
             "heizung": analyzer.get_climate_overview,
+            "heating": analyzer.get_climate_overview,
             
             # Bewegung
             "motion": analyzer.check_motion_sensors,
             "bewegung": analyzer.check_motion_sensors,
             "presence": analyzer.check_motion_sensors,
+            "präsenz": analyzer.check_motion_sensors,
             
             # Luftqualität
             "air_quality": analyzer.analyze_air_quality,
             "luft": analyzer.analyze_air_quality,
             "luftqualität": analyzer.analyze_air_quality,
+            "luftqualitaet": analyzer.analyze_air_quality,
             "co2": analyzer.analyze_air_quality,
+            "airquality": analyzer.analyze_air_quality,
             
             # Alle Sensoren
             "all_sensors": analyzer.get_all_sensors_summary,
@@ -477,6 +619,7 @@ class DeviceController:
             "sensoren": analyzer.get_all_sensors_summary,
             "all": analyzer.get_all_sensors_summary,
             "alle": analyzer.get_all_sensors_summary,
+            "allsensors": analyzer.get_all_sensors_summary,
             
             # Zusammenfassung
             "device_summary": analyzer.get_device_summary,
@@ -484,6 +627,7 @@ class DeviceController:
             "zusammenfassung": analyzer.get_device_summary,
             "übersicht": analyzer.get_device_summary,
             "uebersicht": analyzer.get_device_summary,
+            "overview": analyzer.get_device_summary,
             
             # Letzte Aktivität
             "last_activity": analyzer.get_last_activities,
@@ -491,22 +635,76 @@ class DeviceController:
             "aktivität": analyzer.get_last_activities,
             "aktivitaet": analyzer.get_last_activities,
             "letzte": analyzer.get_last_activities,
+            "recent": analyzer.get_last_activities,
         }
         
         sub_type_lower = sub_type.lower().strip()
         
+        # Entferne Leerzeichen und Unterstriche für flexibleres Matching
+        sub_type_clean = sub_type_lower.replace(' ', '').replace('_', '').replace('-', '')
+        
         # Direkte Übereinstimmung
         if sub_type_lower in query_map:
-            return query_map[sub_type_lower]()
+            result = query_map[sub_type_lower]()
+            if area_filter:
+                result = f"📍 **Bereich: {area_filter}**\n\n" + result
+            return result
+        
+        # Bereinigte Übereinstimmung (ohne Trennzeichen)
+        for key, func in query_map.items():
+            key_clean = key.replace('_', '').replace(' ', '').replace('-', '')
+            if sub_type_clean == key_clean:
+                result = func()
+                if area_filter:
+                    result = f"📍 **Bereich: {area_filter}**\n\n" + result
+                return result
         
         # Partielle Übereinstimmung
         for key, func in query_map.items():
             if key in sub_type_lower or sub_type_lower in key:
-                return func()
+                result = func()
+                if area_filter:
+                    result = f"📍 **Bereich: {area_filter}**\n\n" + result
+                return result
         
-        _LOGGER.warning(f"Unknown status type: {sub_type}")
+        # Erweiterte partielle Übereinstimmung (ohne Trennzeichen)
+        for key, func in query_map.items():
+            key_clean = key.replace('_', '').replace(' ', '')
+            if key_clean in sub_type_clean or sub_type_clean in key_clean:
+                result = func()
+                if area_filter:
+                    result = f"📍 **Bereich: {area_filter}**\n\n" + result
+                return result
+        
+        # Wort-basierte Übereinstimmung
+        sub_type_words = set(re.split(r'[_\s\-/]+', sub_type_lower))
+        best_match = None
+        best_score = 0
+        
+        for key, func in query_map.items():
+            key_words = set(re.split(r'[_\s\-/]+', key))
+            common = sub_type_words & key_words
+            if len(common) > best_score:
+                best_score = len(common)
+                best_match = func
+        
+        if best_match and best_score > 0:
+            result = best_match()
+            if area_filter:
+                result = f"📍 **Bereich: {area_filter}**\n\n" + result
+            return result
+        
+        _LOGGER.warning(f"Unknown status type: '{sub_type}' (cleaned: '{sub_type_clean}')")
+        
+        # Versuche trotzdem eine sinnvolle Antwort zu geben
+        # Prüfe ob sub_type ein Bereichsname ist
+        for info in controlled.values():
+            if info['area'] and sub_type_lower in info['area'].lower():
+                # Es ist ein Bereichsname - zeige alle Sensoren dieses Bereichs
+                return await self._execute_status_query("all_sensors", sub_type)
+        
         return (
-            f"❌ Unbekannter Status-Typ: {sub_type}\n\n"
+            f"❌ Unbekannter Abfragetyp: '{sub_type}'\n\n"
             f"Verfügbare Abfragen:\n"
             f"  • temperaturen\n"
             f"  • luftfeuchtigkeit\n"
@@ -518,7 +716,8 @@ class DeviceController:
             f"  • klima\n"
             f"  • bewegung\n"
             f"  • luftqualität\n"
-            f"  • zusammenfassung"
+            f"  • zusammenfassung\n"
+            f"  • alle sensoren"
         )
 
     # ==================== CONTROL EXECUTION ====================
@@ -530,23 +729,19 @@ class DeviceController:
         service = command.get("service", "turn_on")
         service_data = command.get("data", {})
         
-        # Kopie der Daten erstellen
         if isinstance(service_data, dict):
             service_data = service_data.copy()
         else:
             service_data = {}
 
-        # Fallback: domain aus entity_id extrahieren
         if not domain and entity_id and '.' in entity_id:
             domain = entity_id.split('.')[0]
 
         if not entity_id:
             return "❌ Keine Entity-ID angegeben"
 
-        # Korrigiere Service-Namen
         service = self._normalize_service(service)
 
-        # Prüfe ob Entity steuerbar
         controlled = self.get_controlled_entities(include_sensors=False)
         if entity_id not in controlled:
             suggestions = self._find_similar_entities(entity_id, controlled)
@@ -554,7 +749,6 @@ class DeviceController:
                 return f"❌ '{entity_id}' nicht verfügbar.\n\nÄhnliche Geräte:\n{suggestions}"
             return f"❌ '{entity_id}' nicht verfügbar"
 
-        # Korrigiere Daten-Format für Home Assistant
         service_data = self._normalize_service_data(service_data)
         service_data["entity_id"] = entity_id
 
@@ -597,7 +791,6 @@ class DeviceController:
             service = command.get("service", "turn_on")
             service_data = command.get("data", {})
             
-            # Kopie erstellen
             if isinstance(service_data, dict):
                 service_data = service_data.copy()
             else:
@@ -636,25 +829,18 @@ class DeviceController:
         service_lower = str(service).lower().strip()
         
         service_map = {
-            # An/Ein
             "on": "turn_on",
             "an": "turn_on",
             "ein": "turn_on",
             "einschalten": "turn_on",
             "turn_on": "turn_on",
-            
-            # Aus
             "off": "turn_off",
             "aus": "turn_off",
             "ausschalten": "turn_off",
             "turn_off": "turn_off",
-            
-            # Toggle
             "toggle": "toggle",
             "umschalten": "toggle",
             "wechseln": "toggle",
-            
-            # Spezielle Services
             "set_temperature": "set_temperature",
             "set_hvac_mode": "set_hvac_mode",
             "set_position": "set_position",
@@ -676,35 +862,27 @@ class DeviceController:
             key_lower = key.lower()
             
             # ===== FARBEN =====
-            # rgb, color → rgb_color
             if key_lower in ["rgb", "color", "rgb_color", "farbe"]:
                 if isinstance(value, list) and len(value) >= 3:
                     result["rgb_color"] = [int(v) for v in value[:3]]
             
             # ===== HELLIGKEIT =====
-            # brightness (0-255) → brightness_pct (0-100)
             elif key_lower == "brightness":
                 if isinstance(value, (int, float)):
                     if value > 100:
-                        # 0-255 Format → 0-100
                         result["brightness_pct"] = max(1, min(100, int(value / 255 * 100)))
                     else:
-                        # Bereits 0-100
                         result["brightness_pct"] = max(1, min(100, int(value)))
             
-            # brightness_pct direkt übernehmen
             elif key_lower in ["brightness_pct", "helligkeit"]:
                 if isinstance(value, (int, float)):
                     result["brightness_pct"] = max(1, min(100, int(value)))
             
             # ===== FARBTEMPERATUR =====
-            # color_temp (Mired) → color_temp_kelvin
             elif key_lower == "color_temp":
                 if isinstance(value, (int, float)) and value > 0:
-                    # Mired to Kelvin: K = 1,000,000 / Mired
                     result["color_temp_kelvin"] = int(1000000 / value)
             
-            # color_temp_kelvin direkt übernehmen
             elif key_lower in ["color_temp_kelvin", "kelvin", "farbtemperatur"]:
                 if isinstance(value, (int, float)):
                     result["color_temp_kelvin"] = int(value)
@@ -743,16 +921,13 @@ class DeviceController:
         if service == "turn_on":
             msg += " eingeschaltet"
             
-            # Helligkeit
             if "brightness_pct" in data:
                 msg += f" ({data['brightness_pct']}%)"
             
-            # Farbe
             if "rgb_color" in data:
                 color_name = self.color_manager.get_color_name(data['rgb_color'])
                 msg += f" ({color_name})"
             
-            # Farbtemperatur
             if "color_temp_kelvin" in data:
                 kelvin = data['color_temp_kelvin']
                 if kelvin < 3000:
@@ -794,20 +969,17 @@ class DeviceController:
         """Find similar entity IDs for suggestions."""
         suggestions = []
         
-        # Extrahiere Suchbegriffe
         search_parts = entity_id.lower().replace("_", " ").replace(".", " ").split()
         
         for eid, info in controlled.items():
             eid_lower = eid.lower().replace("_", " ").replace(".", " ")
             name_lower = info['name'].lower()
             
-            # Prüfe ob Suchbegriffe matchen
             matches = sum(1 for word in search_parts if word in eid_lower or word in name_lower)
             
             if matches > 0:
                 suggestions.append((matches, f"  • {info['name']} ({eid})"))
         
-        # Sortiere nach Übereinstimmungen
         suggestions.sort(key=lambda x: x[0], reverse=True)
         
         return "\n".join(s[1] for s in suggestions[:5])

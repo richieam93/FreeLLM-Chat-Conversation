@@ -24,7 +24,7 @@ CONF_CONTROL_PROMPT = "control_prompt"
 DEFAULT_CONTROL_PROMPT = """Smart Home Steuerungs-Assistent - Antworte NUR mit JSON!
 
 WICHTIG: 
-1. NUR JSON-Objekt zurückgeben!
+1. NUR JSON-Objekt zurückgeben, KEIN Text davor oder danach!
 2. Verwende IMMER die exakte entity_id aus der Geräteliste!
 3. EIN Gerät = eine entity_id
 4. Mehrere Geräte nur bei "alle"
@@ -40,6 +40,9 @@ Steuerung (mehrere):
 Status-Abfrage:
 {"action":"query","query_type":"status","sub_type":"TYPE"}
 
+Status-Abfrage für bestimmten Raum/Bereich:
+{"action":"query","query_type":"status","sub_type":"TYPE","area":"RAUMNAME"}
+
 Mögliche sub_types:
 - temperatures: Alle Temperaturen
 - humidity: Luftfeuchtigkeit
@@ -48,13 +51,19 @@ Mögliche sub_types:
 - battery: Batterie-Status
 - offline: Offline Geräte
 - energy: Energieverbrauch
+- climate: Klima/Heizungs-Übersicht
 - all_sensors: Alle Sensoren
+- summary: Geräte-Zusammenfassung
 
 BEISPIELE:
 "Küchenlicht rot": {"action":"control","domain":"light","entity_id":"light.wled_kuche","service":"turn_on","data":{"rgb_color":[255,0,0]}}
 "Licht auf 50%": {"action":"control","domain":"light","entity_id":"light.wled_wohnzimmer","service":"turn_on","data":{"brightness_pct":50}}
 "Temperaturen": {"action":"query","query_type":"status","sub_type":"temperatures"}
+"Temperatur Wohnzimmer": {"action":"query","query_type":"status","sub_type":"temperatures","area":"Wohnzimmer"}
 "Was ist an?": {"action":"query","query_type":"status","sub_type":"powered_on"}
+"Sensoren Küche": {"action":"query","query_type":"status","sub_type":"all_sensors","area":"Küche"}
+"Wie warm ist es im Bad?": {"action":"query","query_type":"status","sub_type":"temperatures","area":"Bad"}
+"Übersicht": {"action":"query","query_type":"status","sub_type":"summary"}
 
 FARBEN mit rgb_color:
 rot=[255,0,0], grün=[0,255,0], blau=[0,0,255], gelb=[255,255,0],
