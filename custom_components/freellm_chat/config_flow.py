@@ -34,11 +34,6 @@ from .const import (
     CONF_SELECTED_ENTITIES,
     CONF_SELECTED_AREAS,
     CONF_ENABLE_SENSORS,
-    CONF_ENABLE_CACHE,
-    CONF_CACHE_DURATION,
-    CONF_OPTIMIZE_PROMPTS,
-    CONF_COMPRESSION_LEVEL,
-    CONF_ENABLE_STATISTICS,
     CONF_HISTORY_LIMIT,
     CONF_TIMEOUT,
     CONF_RETRY_COUNT,
@@ -51,11 +46,6 @@ from .const import (
     DEFAULT_CONTROL_TEMPERATURE,
     DEFAULT_CONTROL_MAX_TOKENS,
     DEFAULT_ENABLE_SENSORS,
-    DEFAULT_ENABLE_CACHE,
-    DEFAULT_CACHE_DURATION,
-    DEFAULT_OPTIMIZE_PROMPTS,
-    DEFAULT_COMPRESSION_LEVEL,
-    DEFAULT_ENABLE_STATISTICS,
     DEFAULT_HISTORY_LIMIT,
     DEFAULT_TIMEOUT,
     DEFAULT_RETRY_COUNT,
@@ -79,11 +69,6 @@ DEFAULT_OPTIONS = types.MappingProxyType({
     CONF_SELECTED_ENTITIES: [],
     CONF_SELECTED_AREAS: [],
     CONF_ENABLE_SENSORS: DEFAULT_ENABLE_SENSORS,
-    CONF_ENABLE_CACHE: DEFAULT_ENABLE_CACHE,
-    CONF_CACHE_DURATION: DEFAULT_CACHE_DURATION,
-    CONF_OPTIMIZE_PROMPTS: DEFAULT_OPTIMIZE_PROMPTS,
-    CONF_COMPRESSION_LEVEL: DEFAULT_COMPRESSION_LEVEL,
-    CONF_ENABLE_STATISTICS: DEFAULT_ENABLE_STATISTICS,
     CONF_HISTORY_LIMIT: DEFAULT_HISTORY_LIMIT,
     CONF_TIMEOUT: DEFAULT_TIMEOUT,
     CONF_RETRY_COUNT: DEFAULT_RETRY_COUNT,
@@ -91,58 +76,19 @@ DEFAULT_OPTIONS = types.MappingProxyType({
 
 # Alle LLM7.io Modelle
 ALL_MODELS = [
-    # GPT Modelle
     {"label": "GPT-4o Mini (2024-07-18)", "value": "gpt-4o-mini-2024-07-18"},
     {"label": "GPT-4o", "value": "gpt-4o"},
     {"label": "GPT-o3 Mini", "value": "gpt-o3-mini"},
-    
-    # DeepSeek Modelle
     {"label": "DeepSeek V3", "value": "deepseek-v3"},
     {"label": "DeepSeek R1", "value": "deepseek-r1"},
     {"label": "DeepSeek R1 Qwen 32B", "value": "deepseek-r1-qwen:32b"},
-    {"label": "DeepSeek R1 Distill Llama 70B FP8", "value": "deepseek-r1-distill-llama-70b:fp8"},
-    
-    # Llama Modelle
     {"label": "Llama 3.1 8B", "value": "llama3.1:8b"},
     {"label": "Llama 3.2 11B", "value": "llama3.2:11b"},
-    {"label": "Llama 3.3 70B Instruct FP8 Fast", "value": "llama-3.3-70b-instruct-fp8-fast"},
-    {"label": "Llama 4 Scout 17B 16E Instruct", "value": "llama-4-scout-17b-16e-instruct"},
-    {"label": "Llama Scaleway", "value": "llama-scaleway"},
-    
-    # Qwen Modelle
-    {"label": "Qwen 2.5 Coder 32B Instruct INT8", "value": "qwen2.5-coder-32b-instruct:int8"},
+    {"label": "Llama 3.3 70B Instruct", "value": "llama-3.3-70b-instruct-fp8-fast"},
     {"label": "Qwen QWQ 32B", "value": "qwen-qwq-32b"},
-    
-    # Mistral Modelle
     {"label": "Mistral Small 2503", "value": "mistral-small-2503"},
-    {"label": "Unity Mistral Large", "value": "unity-mistral-large"},
-    {"label": "Mistral Roblox", "value": "mistral-roblox"},
-    
-    # Gemini Modelle
     {"label": "Gemini 2.0 Flash", "value": "gemini-2.0-flash"},
-    {"label": "Gemini 2.0 Flash Thinking", "value": "gemini-2.0-flash-thinking"},
-    
-    # Andere Modelle
     {"label": "Phi-4", "value": "phi-4"},
-    {"label": "Pixtral 12B", "value": "pixtral:12b"},
-    {"label": "Hormoz 8B", "value": "hormoz:8b"},
-    {"label": "Hypnosis Tracy 7B", "value": "hypnosis-tracy:7b"},
-    
-    # Spezial-Modelle
-    {"label": "SearchGPT", "value": "searchgpt"},
-    {"label": "Midijourney", "value": "midijourney"},
-    {"label": "Rtist", "value": "rtist"},
-    {"label": "Evil", "value": "evil"},
-    {"label": "Sur", "value": "sur"},
-    {"label": "Roblox RP", "value": "roblox-rp"},
-    {"label": "OpenAI Audio", "value": "openai-audio"},
-]
-
-COMPRESSION_LEVELS = [
-    {"label": "🔄 Automatisch (empfohlen)", "value": "auto"},
-    {"label": "📄 Keine Komprimierung", "value": "none"},
-    {"label": "📊 Mittel", "value": "medium"},
-    {"label": "⚡ Hoch (schnellste)", "value": "high"},
 ]
 
 
@@ -178,19 +124,16 @@ class OptionsFlow(config_entries.OptionsFlow):
     async def async_step_init(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
-        """Main menu."""
+        """Main menu - nur 3 Optionen."""
         return self.async_show_menu(
             step_id="init",
             menu_options=[
                 "chat_settings",
                 "control_settings",
                 "entity_selection",
-                "performance_settings",
-                "advanced_settings"
             ]
         )
 
-    # ===== CHAT EINSTELLUNGEN =====
     async def async_step_chat_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -202,6 +145,8 @@ class OptionsFlow(config_entries.OptionsFlow):
             new_options[CONF_CHAT_TEMPERATURE] = user_input.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE)
             new_options[CONF_CHAT_MAX_TOKENS] = user_input.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS)
             new_options[CONF_HISTORY_LIMIT] = user_input.get(CONF_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT)
+            new_options[CONF_TIMEOUT] = user_input.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
+            new_options[CONF_RETRY_COUNT] = user_input.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
             return self.async_create_entry(title="", data=new_options)
 
         options = {**DEFAULT_OPTIONS, **self.config_entry.options}
@@ -235,13 +180,24 @@ class OptionsFlow(config_entries.OptionsFlow):
                     min=5, max=50, step=5, mode=NumberSelectorMode.SLIDER
                 )),
                 vol.Optional(
+                    CONF_TIMEOUT,
+                    description={"suggested_value": options.get(CONF_TIMEOUT)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=10, max=120, step=10, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
+                    CONF_RETRY_COUNT,
+                    description={"suggested_value": options.get(CONF_RETRY_COUNT)},
+                ): NumberSelector(NumberSelectorConfig(
+                    min=0, max=5, step=1, mode=NumberSelectorMode.SLIDER
+                )),
+                vol.Optional(
                     CONF_PROMPT,
                     description={"suggested_value": options.get(CONF_PROMPT)},
                 ): TemplateSelector(),
             }),
         )
 
-    # ===== STEUERUNGS EINSTELLUNGEN =====
     async def async_step_control_settings(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -278,7 +234,7 @@ class OptionsFlow(config_entries.OptionsFlow):
                     CONF_CONTROL_MAX_TOKENS,
                     description={"suggested_value": options.get(CONF_CONTROL_MAX_TOKENS)},
                 ): NumberSelector(NumberSelectorConfig(
-                    min=100, max=2000, step=50, mode=NumberSelectorMode.SLIDER
+                    min=100, max=4000, step=100, mode=NumberSelectorMode.SLIDER
                 )),
                 vol.Optional(
                     CONF_CONTROL_PROMPT,
@@ -287,7 +243,6 @@ class OptionsFlow(config_entries.OptionsFlow):
             }),
         )
 
-    # ===== ENTITY AUSWAHL =====
     async def async_step_entity_selection(
         self, user_input: dict[str, Any] | None = None
     ) -> FlowResult:
@@ -327,83 +282,4 @@ class OptionsFlow(config_entries.OptionsFlow):
         return self.async_show_form(
             step_id="entity_selection",
             data_schema=vol.Schema(schema_dict),
-        )
-
-    # ===== PERFORMANCE EINSTELLUNGEN =====
-    async def async_step_performance_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle performance settings."""
-        if user_input is not None:
-            new_options = {**self.config_entry.options}
-            new_options[CONF_ENABLE_CACHE] = user_input.get(CONF_ENABLE_CACHE, DEFAULT_ENABLE_CACHE)
-            new_options[CONF_CACHE_DURATION] = user_input.get(CONF_CACHE_DURATION, DEFAULT_CACHE_DURATION)
-            new_options[CONF_OPTIMIZE_PROMPTS] = user_input.get(CONF_OPTIMIZE_PROMPTS, DEFAULT_OPTIMIZE_PROMPTS)
-            new_options[CONF_COMPRESSION_LEVEL] = user_input.get(CONF_COMPRESSION_LEVEL, DEFAULT_COMPRESSION_LEVEL)
-            return self.async_create_entry(title="", data=new_options)
-
-        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
-
-        return self.async_show_form(
-            step_id="performance_settings",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    CONF_ENABLE_CACHE,
-                    description={"suggested_value": options.get(CONF_ENABLE_CACHE)},
-                ): BooleanSelector(),
-                vol.Optional(
-                    CONF_CACHE_DURATION,
-                    description={"suggested_value": options.get(CONF_CACHE_DURATION)},
-                ): NumberSelector(NumberSelectorConfig(
-                    min=60, max=3600, step=60, mode=NumberSelectorMode.SLIDER,
-                    unit_of_measurement="Sekunden"
-                )),
-                vol.Optional(
-                    CONF_OPTIMIZE_PROMPTS,
-                    description={"suggested_value": options.get(CONF_OPTIMIZE_PROMPTS)},
-                ): BooleanSelector(),
-                vol.Optional(
-                    CONF_COMPRESSION_LEVEL,
-                    description={"suggested_value": options.get(CONF_COMPRESSION_LEVEL)},
-                ): SelectSelector(SelectSelectorConfig(
-                    options=COMPRESSION_LEVELS, mode=SelectSelectorMode.DROPDOWN
-                )),
-            }),
-        )
-
-    # ===== ERWEITERTE EINSTELLUNGEN =====
-    async def async_step_advanced_settings(
-        self, user_input: dict[str, Any] | None = None
-    ) -> FlowResult:
-        """Handle advanced settings."""
-        if user_input is not None:
-            new_options = {**self.config_entry.options}
-            new_options[CONF_ENABLE_STATISTICS] = user_input.get(CONF_ENABLE_STATISTICS, DEFAULT_ENABLE_STATISTICS)
-            new_options[CONF_TIMEOUT] = user_input.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-            new_options[CONF_RETRY_COUNT] = user_input.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
-            return self.async_create_entry(title="", data=new_options)
-
-        options = {**DEFAULT_OPTIONS, **self.config_entry.options}
-
-        return self.async_show_form(
-            step_id="advanced_settings",
-            data_schema=vol.Schema({
-                vol.Optional(
-                    CONF_ENABLE_STATISTICS,
-                    description={"suggested_value": options.get(CONF_ENABLE_STATISTICS)},
-                ): BooleanSelector(),
-                vol.Optional(
-                    CONF_TIMEOUT,
-                    description={"suggested_value": options.get(CONF_TIMEOUT)},
-                ): NumberSelector(NumberSelectorConfig(
-                    min=10, max=120, step=5, mode=NumberSelectorMode.SLIDER,
-                    unit_of_measurement="Sekunden"
-                )),
-                vol.Optional(
-                    CONF_RETRY_COUNT,
-                    description={"suggested_value": options.get(CONF_RETRY_COUNT)},
-                ): NumberSelector(NumberSelectorConfig(
-                    min=0, max=5, step=1, mode=NumberSelectorMode.SLIDER
-                )),
-            }),
         )
