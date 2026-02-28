@@ -83,7 +83,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         self.history: dict[str, list[dict]] = {}
         
         # Cache initialisieren
-        cache_duration = entry.options.get(CONF_CACHE_DURATION, DEFAULT_CACHE_DURATION)
+        cache_duration = int(entry.options.get(CONF_CACHE_DURATION, DEFAULT_CACHE_DURATION))
         self.cache = ResponseCache(max_age_seconds=cache_duration)
         
         # Prompt Optimizer
@@ -157,20 +157,20 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         """Handle device control and sensor query requests."""
         start_time = time.time()
         
-        # Hole alle Einstellungen
+        # Hole alle Einstellungen (mit int() für numerische Werte)
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         control_prompt = self.entry.options.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
-        control_temperature = self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE)
-        control_max_tokens = self.entry.options.get(CONF_CONTROL_MAX_TOKENS, DEFAULT_CONTROL_MAX_TOKENS)
+        control_temperature = float(self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE))
+        control_max_tokens = int(self.entry.options.get(CONF_CONTROL_MAX_TOKENS, DEFAULT_CONTROL_MAX_TOKENS))
         selected_entities = self.entry.options.get(CONF_SELECTED_ENTITIES, [])
         selected_areas = self.entry.options.get(CONF_SELECTED_AREAS, [])
         enable_sensors = self.entry.options.get(CONF_ENABLE_SENSORS, DEFAULT_ENABLE_SENSORS)
         enable_cache = self.entry.options.get(CONF_ENABLE_CACHE, DEFAULT_ENABLE_CACHE)
         optimize_prompts = self.entry.options.get(CONF_OPTIMIZE_PROMPTS, DEFAULT_OPTIMIZE_PROMPTS)
-        timeout = self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        retry_count = self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
+        timeout = int(self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
+        retry_count = int(self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT))
 
-        _LOGGER.debug(f"Control request - Model: {model_name}, Timeout: {timeout}s")
+        _LOGGER.debug(f"Control request - Model: {model_name}, Timeout: {timeout}s, Retries: {retry_count}")
 
         # Controller initialisieren
         controller = DeviceController(
@@ -273,7 +273,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         result = await controller.execute_command(response_text)
 
         if result:
-            # Cache speichern für Abfragen
+            # Cache speichern für Abfragen (nicht für Steuerungsbefehle)
             if enable_cache and not any(w in user_input.text.lower() for w in ['schalte', 'mach', 'an', 'aus']):
                 self.cache.set(full_prompt, user_input.text, response_text)
             
@@ -300,11 +300,11 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         """Handle normal chat requests."""
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         raw_prompt = self.entry.options.get(CONF_PROMPT, DEFAULT_PROMPT)
-        chat_temperature = self.entry.options.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE)
-        chat_max_tokens = self.entry.options.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS)
-        history_limit = self.entry.options.get(CONF_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT)
-        timeout = self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT)
-        retry_count = self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT)
+        chat_temperature = float(self.entry.options.get(CONF_CHAT_TEMPERATURE, DEFAULT_CHAT_TEMPERATURE))
+        chat_max_tokens = int(self.entry.options.get(CONF_CHAT_MAX_TOKENS, DEFAULT_CHAT_MAX_TOKENS))
+        history_limit = int(self.entry.options.get(CONF_HISTORY_LIMIT, DEFAULT_HISTORY_LIMIT))
+        timeout = int(self.entry.options.get(CONF_TIMEOUT, DEFAULT_TIMEOUT))
+        retry_count = int(self.entry.options.get(CONF_RETRY_COUNT, DEFAULT_RETRY_COUNT))
 
         try:
             prompt = template.Template(raw_prompt, self.hass).async_render(
