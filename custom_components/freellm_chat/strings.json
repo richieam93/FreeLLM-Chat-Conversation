@@ -1,97 +1,104 @@
 {
   "config": {
     "error": {
-      "invalid_auth": "Ungültige Authentifizierung"
+      "invalid_auth": "[%key:common::config_flow::error::invalid_auth%]",
+      "cannot_connect": "[%key:common::config_flow::error::cannot_connect%]",
+      "unknown": "[%key:common::config_flow::error::unknown%]"
     },
     "abort": {
-      "no_entities_available": "Keine steuerbaren Geräte verfügbar"
+      "already_configured": "[%key:common::config_flow::abort::already_configured_device%]",
+      "no_entities_available": "No controllable devices available"
     },
     "step": {
       "user": {
         "title": "FreeLLM Chat",
-        "description": "FreeLLM Chat einrichten?"
+        "description": "Do you want to set up FreeLLM Chat?"
       }
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "FreeLLM Chat Einstellungen",
+        "title": "FreeLLM Chat Settings",
         "menu_options": {
-          "chat_settings": "💬 Chat-Einstellungen",
-          "control_settings": "⚙️ Gerätesteuerung",
-          "entity_selection": "🏠 Geräte & Bereiche",
-          "performance_settings": "⚡ Performance",
-          "advanced_settings": "🔧 Erweitert"
+          "chat_settings": "💬 Chat Settings",
+          "control_settings": "⚙️ Device Control & Sensors",
+          "entity_selection": "🏠 Select Devices & Areas",
+          "performance_settings": "⚡ Performance & Caching",
+          "advanced_settings": "🔧 Advanced Settings"
         }
       },
       "chat_settings": {
-        "title": "💬 Chat-Einstellungen",
-        "description": "Konfiguriere das normale Chat-Verhalten",
+        "title": "💬 Chat Settings",
+        "description": "Configure normal chat behavior",
         "data": {
-          "chat_model": "KI-Modell",
-          "chat_temperature": "Temperatur (Kreativität)",
-          "chat_max_tokens": "Max. Antwortlänge",
-          "history_limit": "Chat-Verlauf Limit",
-          "prompt": "System-Prompt"
+          "chat_model": "AI Model",
+          "chat_temperature": "Temperature (Creativity)",
+          "chat_max_tokens": "Max Response Length (Tokens)",
+          "history_limit": "Chat History Limit",
+          "prompt": "System Prompt"
         },
         "data_description": {
-          "chat_temperature": "0.0 = präzise, 1.0 = kreativ, 2.0 = sehr kreativ",
-          "chat_max_tokens": "Höhere Werte = längere Antworten",
-          "history_limit": "Anzahl der gespeicherten Nachrichten"
+          "chat_temperature": "0.0 = precise, 1.0 = creative, 2.0 = very creative",
+          "chat_max_tokens": "Higher values = longer responses possible",
+          "history_limit": "Number of messages stored in history"
         }
       },
       "control_settings": {
-        "title": "⚙️ Gerätesteuerung",
-        "description": "Konfiguriere die Smart Home Steuerung",
+        "title": "⚙️ Device Control & Sensors",
+        "description": "Configure smart home control",
         "data": {
-          "enable_device_control": "Gerätesteuerung aktivieren",
-          "enable_sensors": "Sensor-Abfragen erlauben",
-          "control_temperature": "Temperatur (Genauigkeit)",
-          "control_max_tokens": "Max. Antwortlänge",
-          "control_prompt": "Steuerungs-Prompt"
+          "enable_device_control": "Enable Device Control",
+          "enable_sensors": "Allow Sensor Queries",
+          "control_temperature": "Temperature (Accuracy)",
+          "control_max_tokens": "Max Response Length (Tokens)",
+          "control_prompt": "Control Prompt"
         },
         "data_description": {
-          "enable_sensors": "Temperaturen, Luftfeuchtigkeit, etc. abfragen",
-          "control_temperature": "Niedriger = genauer (empfohlen: 0.1-0.3)"
+          "enable_sensors": "Enables queries like 'What's the temperature?'",
+          "control_temperature": "Lower = more accurate (recommended: 0.1-0.3)"
         }
       },
       "entity_selection": {
-        "title": "🏠 Geräte & Bereiche",
-        "description": "Wähle aus, welche Geräte gesteuert werden können",
+        "title": "🏠 Devices & Areas",
+        "description": "Select areas and/or devices for control",
         "data": {
-          "selected_areas": "Bereiche",
-          "selected_entities": "Einzelne Geräte"
+          "selected_areas": "Select Areas",
+          "selected_entities": "Select Individual Devices"
+        },
+        "data_description": {
+          "selected_areas": "All devices in these areas can be controlled",
+          "selected_entities": "Additional individual devices"
         }
       },
       "performance_settings": {
-        "title": "⚡ Performance",
-        "description": "Optimiere Geschwindigkeit und Ressourcenverbrauch",
+        "title": "⚡ Performance & Caching",
+        "description": "Optimize speed and resource usage",
         "data": {
-          "enable_cache": "Antwort-Cache aktivieren",
-          "cache_duration": "Cache-Dauer",
-          "optimize_prompts": "Prompts optimieren",
-          "compression_level": "Komprimierungsstufe"
+          "enable_cache": "Enable Response Cache",
+          "cache_duration": "Cache Duration (seconds)",
+          "optimize_prompts": "Optimize Prompts",
+          "compression_level": "Compression Level"
         },
         "data_description": {
-          "enable_cache": "Identische Anfragen aus Cache beantworten",
-          "cache_duration": "Wie lange Antworten gecacht werden",
-          "optimize_prompts": "Prompts für schnellere Antworten kürzen",
-          "compression_level": "Auto passt sich an Gerätezahl an"
+          "enable_cache": "Cache responses for identical queries",
+          "cache_duration": "How long responses are cached",
+          "optimize_prompts": "Shorten prompts for faster responses",
+          "compression_level": "Auto adapts to device count"
         }
       },
       "advanced_settings": {
-        "title": "🔧 Erweiterte Einstellungen",
-        "description": "Zusätzliche Konfigurationsoptionen",
+        "title": "🔧 Advanced Settings",
+        "description": "Additional configuration options",
         "data": {
-          "enable_statistics": "Statistiken sammeln",
-          "timeout": "Timeout",
-          "retry_count": "Wiederholungsversuche"
+          "enable_statistics": "Collect Statistics",
+          "timeout": "Timeout (seconds)",
+          "retry_count": "Retry Count"
         },
         "data_description": {
-          "enable_statistics": "Sammelt anonyme Nutzungsstatistiken",
-          "timeout": "Maximale Wartezeit für LLM-Antwort",
-          "retry_count": "Anzahl Wiederholungen bei Fehler"
+          "enable_statistics": "Collect anonymous usage statistics",
+          "timeout": "Maximum wait time for LLM response",
+          "retry_count": "Number of retries on error"
         }
       }
     }
