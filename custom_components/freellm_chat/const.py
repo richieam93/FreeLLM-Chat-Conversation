@@ -57,7 +57,7 @@ BEISPIELE:
 "Was ist an?": {"action":"query","query_type":"status","sub_type":"powered_on"}
 
 FARBEN mit rgb_color:
-rot=[255,0,0], gr��n=[0,255,0], blau=[0,0,255], gelb=[255,255,0],
+rot=[255,0,0], grün=[0,255,0], blau=[0,0,255], gelb=[255,255,0],
 weiß=[255,255,255], warmweiß=[255,244,229], kaltweiß=[200,220,255],
 orange=[255,165,0], pink=[255,105,180], lila=[128,0,128]"""
 
@@ -114,19 +114,193 @@ SENSOR_DOMAINS = [
 
 SUPPORTED_DOMAINS = CONTROL_DOMAINS + SENSOR_DOMAINS
 
-# ===== FARBEN =====
+# ===== FARBEN (RGB) =====
 COLOR_PRESETS = {
+    # Grundfarben
     "rot": [255, 0, 0],
     "grün": [0, 255, 0],
     "blau": [0, 0, 255],
     "gelb": [255, 255, 0],
+    "cyan": [0, 255, 255],
+    "magenta": [255, 0, 255],
     "weiß": [255, 255, 255],
+    "schwarz": [0, 0, 0],
+    
+    # Warme Farben
     "warmweiß": [255, 244, 229],
-    "kaltweiß": [200, 220, 255],
     "orange": [255, 165, 0],
-    "pink": [255, 105, 180],
+    "gold": [255, 215, 0],
+    "koralle": [255, 127, 80],
+    "lachs": [250, 128, 114],
+    "pfirsich": [255, 218, 185],
+    
+    # Kalte Farben
+    "kaltweiß": [200, 220, 255],
+    "türkis": [64, 224, 208],
+    "himmelblau": [135, 206, 235],
+    "eisblau": [173, 216, 230],
+    "marineblau": [0, 0, 128],
+    
+    # Violett/Pink
     "lila": [128, 0, 128],
     "violett": [138, 43, 226],
-    "türkis": [64, 224, 208],
-    "cyan": [0, 255, 255],
+    "pink": [255, 105, 180],
+    "rosa": [255, 182, 193],
+    "lavendel": [230, 230, 250],
+    "fuchsia": [255, 0, 255],
+    
+    # Grüntöne
+    "mint": [152, 255, 152],
+    "limette": [50, 205, 50],
+    "olive": [128, 128, 0],
+    "waldgrün": [34, 139, 34],
+    "smaragd": [0, 201, 87],
+    
+    # Brauntöne
+    "braun": [139, 69, 19],
+    "beige": [245, 245, 220],
+    "schokolade": [210, 105, 30],
+    
+    # Grautöne
+    "grau": [128, 128, 128],
+    "silber": [192, 192, 192],
+    "dunkelgrau": [64, 64, 64],
+    "hellgrau": [211, 211, 211],
+}
+
+# ===== FARBTEMPERATUREN (KELVIN) =====
+COLOR_TEMPERATURES = {
+    # Sehr warm (Kerzenlicht)
+    "kerze": 1900,
+    "kerzenlicht": 1900,
+    "romantisch": 2000,
+    
+    # Warm (Glühbirne)
+    "warmweiß": 2700,
+    "warm": 2700,
+    "gemütlich": 2700,
+    "glühbirne": 2700,
+    "abend": 2700,
+    "entspannt": 2700,
+    
+    # Neutral
+    "neutral": 4000,
+    "neutralweiß": 4000,
+    "normal": 4000,
+    
+    # Tageslicht
+    "tageslicht": 5500,
+    "tag": 5500,
+    "natürlich": 5500,
+    "morgen": 5000,
+    
+    # Kalt (Konzentration)
+    "kaltweiß": 6500,
+    "kalt": 6500,
+    "konzentration": 6500,
+    "arbeiten": 6500,
+    "büro": 6000,
+    "lesen": 5000,
+    
+    # Sehr kalt
+    "blaulicht": 8000,
+    "blau": 9000,
+}
+
+# ===== SZENEN-PRESETS =====
+SCENE_PRESETS = {
+    "sonnenuntergang": {
+        "rgb_color": [255, 99, 71],
+        "brightness_pct": 60,
+    },
+    "romantisch": {
+        "rgb_color": [255, 20, 147],
+        "brightness_pct": 30,
+    },
+    "party": {
+        "rgb_color": [148, 0, 211],
+        "brightness_pct": 100,
+    },
+    "relax": {
+        "rgb_color": [70, 130, 180],
+        "brightness_pct": 40,
+    },
+    "konzentration": {
+        "brightness_pct": 100,
+        "color_temp_kelvin": 6000,
+    },
+    "nachtlicht": {
+        "rgb_color": [255, 140, 0],
+        "brightness_pct": 10,
+    },
+    "kino": {
+        "rgb_color": [25, 25, 112],
+        "brightness_pct": 15,
+    },
+    "gaming": {
+        "rgb_color": [0, 255, 127],
+        "brightness_pct": 80,
+    },
+    "lesen": {
+        "brightness_pct": 80,
+        "color_temp_kelvin": 4000,
+    },
+    "morgen": {
+        "brightness_pct": 70,
+        "color_temp_kelvin": 4500,
+    },
+    "abend": {
+        "brightness_pct": 50,
+        "color_temp_kelvin": 2700,
+    },
+    "nacht": {
+        "rgb_color": [255, 100, 50],
+        "brightness_pct": 5,
+    },
+    "energie": {
+        "brightness_pct": 100,
+        "color_temp_kelvin": 6500,
+    },
+    "schlaf": {
+        "rgb_color": [255, 100, 50],
+        "brightness_pct": 5,
+    },
+}
+
+# ===== HELLIGKEITS-PRESETS =====
+BRIGHTNESS_PRESETS = {
+    "aus": 0,
+    "minimum": 1,
+    "sehr dunkel": 5,
+    "dunkel": 10,
+    "gedimmt": 25,
+    "niedrig": 30,
+    "mittel": 50,
+    "normal": 75,
+    "hell": 85,
+    "sehr hell": 95,
+    "maximum": 100,
+    "voll": 100,
+}
+
+# ===== KLIMA-PRESETS =====
+CLIMATE_PRESETS = {
+    "heizen": "heat",
+    "kühlen": "cool",
+    "auto": "auto",
+    "aus": "off",
+    "lüften": "fan_only",
+    "entfeuchten": "dry",
+}
+
+# ===== COVER-PRESETS =====
+COVER_PRESETS = {
+    "öffnen": "open_cover",
+    "schließen": "close_cover",
+    "stoppen": "stop_cover",
+    "auf": "open_cover",
+    "zu": "close_cover",
+    "stop": "stop_cover",
+    "hoch": "open_cover",
+    "runter": "close_cover",
 }
