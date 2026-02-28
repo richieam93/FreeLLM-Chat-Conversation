@@ -157,7 +157,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         """Handle device control and sensor query requests."""
         start_time = time.time()
         
-        # Hole alle Einstellungen (mit int() für numerische Werte)
+        # Hole alle Einstellungen (mit int()/float() für numerische Werte)
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         control_prompt = self.entry.options.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
         control_temperature = float(self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE))
@@ -189,9 +189,21 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 user_input.language,
                 conversation_id
             )
+
+        # ===== CACHE CHECK (für ERGEBNISSE, nicht rohe LLM-Antwort) =====
+        cache_key = f"{user_input.text.lower().strip()}"
         
-        # Prompt erstellen - IMMER optimieren wenn viele Geräte
-        if optimize_prompts or entity_count > 20:
+        if enable_cache:
+            cached_result = self.cache.get("result", cache_key)
+            if cached_result:
+                _LOGGER.debug("Cache HIT - returning cached result")
+                elapsed = time.time() - start_time
+                _LOGGER.info(f"Control request (cached) completed in {elapsed:.3f}s")
+                return self._create_response(cached_result, user_input.language, conversation_id)
+        # ================================================================
+        
+        # Prompt erstellen
+        if optimize_prompts and entity_count > 30:
             _LOGGER.debug(f"Optimizing prompt for {entity_count} entities")
             optimized_prompt = self.optimizer.optimize_prompt(
                 control_prompt, 
@@ -209,21 +221,12 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         _LOGGER.debug(f"Prompt length: {prompt_length} chars")
         
         # WARNUNG wenn Prompt zu lang
-        if prompt_length > 8000:
+        if prompt_length > 10000:
             _LOGGER.warning(f"Prompt very long ({prompt_length} chars), forcing high compression")
             optimized_prompt = self.optimizer._high_compression()
             entity_context = self.optimizer.compress_entity_list(controlled, max_per_area=3)
             full_prompt = optimized_prompt + entity_context
             _LOGGER.debug(f"Compressed prompt length: {len(full_prompt)} chars")
-
-        # Prüfe Cache
-        if enable_cache:
-            cached_response = self.cache.get(full_prompt, user_input.text)
-            if cached_response:
-                _LOGGER.debug("Cache HIT - using cached response")
-                result = await controller.execute_command(cached_response)
-                if result:
-                    return self._create_response(result, user_input.language, conversation_id)
 
         # LLM-Anfrage
         _LOGGER.info(f"Sending LLM request - Model: {model_name}, Prompt: {len(full_prompt)} chars")
@@ -273,9 +276,17 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         result = await controller.execute_command(response_text)
 
         if result:
-            # Cache speichern für Abfragen (nicht für Steuerungsbefehle)
-            if enable_cache and not any(w in user_input.text.lower() for w in ['schalte', 'mach', 'an', 'aus']):
-                self.cache.set(full_prompt, user_input.text, response_text)
+            # ===== CACHE SPEICHERN (das ERGEBNIS, nicht die LLM-Antwort) =====
+            if enable_cache:
+                # Nur Abfragen cachen, keine Steuerungsbefehle
+                is_query = any(w in user_input.text.lower() for w in [
+                    'temperatur', 'status', 'batterie', 'offline', 'fenster', 
+                    'eingeschaltet', 'feuchtigkeit', 'zeig', 'was ist', 'wie'
+                ])
+                if is_query:
+                    self.cache.set("result", cache_key, result)
+                    _LOGGER.debug(f"Cached result for: {cache_key[:50]}...")
+            # ================================================================
             
             elapsed = time.time() - start_time
             _LOGGER.info(f"Control request completed in {elapsed:.1f}s")
@@ -373,7 +384,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         url = f"{LLM7_BASE_URL}/chat/completions"
         
         # Berechne ungefähre Token-Anzahl
-        total_chars = sum(len(m.get('content', '')) for m in messages)
+        total_chars = sum(len(str(m.get('content', ''))) for m in messages)
         estimated_tokens = total_chars // 4
         
         _LOGGER.debug(f"LLM Request - Model: {model_name}, ~{estimated_tokens} input tokens, max {max_tokens} output")
