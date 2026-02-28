@@ -185,46 +185,174 @@ class DeviceController:
 
     async def execute_command(self, response: str) -> str | None:
         """Parse and execute commands from LLM response."""
+        _LOGGER.debug(f"Parsing response: {response[:200]}...")
+        
         try:
-            clean_response = self._clean_json_response(response)
+            # Bereinige und parse JSON
+            command = self._parse_llm_response(response)
             
-            try:
-                command = json.loads(clean_response)
-            except json.JSONDecodeError:
-                _LOGGER.debug(f"Could not parse: {clean_response[:100]}")
+            if command is None:
+                _LOGGER.warning(f"Could not parse command from: {response[:100]}")
                 return None
 
-            action = command.get("action")
+            _LOGGER.debug(f"Parsed command: {command}")
+
+            action = command.get("action", "").lower()
+            
+            # Korrigiere abgekürzte Actions
+            if action in ["cont", "ctrl", "control"]:
+                action = "control"
+            elif action in ["query", "q", "ask"]:
+                action = "query"
+            elif action in ["control_multiple", "multi", "multiple"]:
+                action = "control_multiple"
 
             if action == "control":
                 return await self._execute_single_command(command)
             elif action == "control_multiple":
                 return await self._execute_multiple_commands_parallel(command.get("commands", []))
             elif action == "query":
-                query_type = command.get("query_type")
-                
-                if query_type == "sensor":
-                    return await self._execute_sensor_query(command)
-                elif query_type == "status":
-                    return await self._execute_status_query(command)
-            
-            return None
+                return await self._handle_query(command)
+            else:
+                _LOGGER.warning(f"Unknown action: {action}")
+                return None
 
         except Exception as e:
             _LOGGER.error(f"Error executing command: {e}")
             return f"❌ Fehler: {str(e)}"
 
-    def _clean_json_response(self, response: str) -> str:
-        """Clean JSON from LLM response."""
+    def _parse_llm_response(self, response: str) -> dict | None:
+        """Parse LLM response with flexible JSON handling."""
+        # Bereinige Response
         clean = response.strip()
+        
+        # Entferne Markdown Code-Blöcke
         clean = re.sub(r'^```(?:json)?\s*', '', clean)
         clean = re.sub(r'\s*```$', '', clean)
         
-        json_match = re.search(r'\{[\s\S]*\}', clean)
-        if json_match:
-            return json_match.group()
+        # Versuche JSON zu finden und zu parsen
+        json_patterns = [
+            r'\{[^{}]*\}',  # Einfaches JSON
+            r'\{.*?\}',      # Minimal
+            r'\{[\s\S]*\}',  # Multi-line
+        ]
         
-        return clean
+        for pattern in json_patterns:
+            matches = re.findall(pattern, clean, re.DOTALL)
+            for match in matches:
+                try:
+                    parsed = json.loads(match)
+                    if isinstance(parsed, dict) and "action" in parsed:
+                        return parsed
+                except json.JSONDecodeError:
+                    continue
+        
+        # Versuche gesamte Response
+        try:
+            parsed = json.loads(clean)
+            if isinstance(parsed, dict):
+                return parsed
+        except json.JSONDecodeError:
+            pass
+        
+        # Letzter Versuch: Repariere kaputtes JSON
+        repaired = self._repair_json(clean)
+        if repaired:
+            return repaired
+        
+        return None
+
+    def _repair_json(self, text: str) -> dict | None:
+        """Try to repair broken JSON."""
+        try:
+            # Finde action
+            action_match = re.search(r'"action"\s*:\s*"(\w+)"', text)
+            if not action_match:
+                return None
+            
+            action = action_match.group(1)
+            
+            # Korrigiere abgekürzte Actions
+            if action in ["cont", "ctrl"]:
+                action = "control"
+            
+            # Finde entity_id
+            entity_match = re.search(r'"entity_id"\s*:\s*"([^"]+)"', text)
+            entity_id = entity_match.group(1) if entity_match else None
+            
+            # Finde Farbe
+            color_match = re.search(r'"(?:color|rgb_color)"\s*:\s*\[(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', text)
+            rgb_color = None
+            if color_match:
+                rgb_color = [int(color_match.group(1)), int(color_match.group(2)), int(color_match.group(3))]
+            
+            # Finde state/service
+            state_match = re.search(r'"state"\s*:\s*"(\w+)"', text)
+            service = "turn_on"
+            if state_match:
+                state = state_match.group(1).lower()
+                if state in ["off", "aus"]:
+                    service = "turn_off"
+            
+            # Für Query
+            if action == "query":
+                type_match = re.search(r'"(?:type|sub_type)"\s*:\s*"(\w+)"', text)
+                query_type = type_match.group(1) if type_match else "temperatures"
+                return {
+                    "action": "query",
+                    "query_type": "status",
+                    "sub_type": query_type
+                }
+            
+            # Für Control
+            if action == "control" and entity_id:
+                domain = entity_id.split('.')[0] if '.' in entity_id else "light"
+                
+                result = {
+                    "action": "control",
+                    "domain": domain,
+                    "entity_id": entity_id,
+                    "service": service,
+                    "data": {}
+                }
+                
+                if rgb_color:
+                    result["data"]["rgb_color"] = rgb_color
+                
+                _LOGGER.info(f"Repaired JSON: {result}")
+                return result
+            
+            return None
+            
+        except Exception as e:
+            _LOGGER.debug(f"JSON repair failed: {e}")
+            return None
+
+    async def _handle_query(self, command: dict) -> str:
+        """Handle query commands with flexible parsing."""
+        query_type = command.get("query_type", "")
+        sub_type = command.get("sub_type", "")
+        
+        # Alternatives Format: {"action":"query","data":{"type":"..."}}
+        if not sub_type and "data" in command:
+            data = command.get("data", {})
+            sub_type = data.get("type", "") or data.get("sub_type", "")
+        
+        # Weiteres alternatives Format
+        if not sub_type:
+            sub_type = command.get("type", "")
+        
+        _LOGGER.debug(f"Query - query_type: {query_type}, sub_type: {sub_type}")
+        
+        # Wenn query_type == "sensor", dann entity_ids abfragen
+        if query_type == "sensor":
+            return await self._execute_sensor_query(command)
+        
+        # Status-Abfragen
+        if query_type == "status" or sub_type:
+            return await self._execute_status_query(sub_type or query_type)
+        
+        return "❌ Unbekannter Abfragetyp"
 
     async def _execute_sensor_query(self, command: dict) -> str:
         """Execute a sensor query."""
@@ -253,54 +381,97 @@ class DeviceController:
             return f"📊 {results[0]}"
         return "📊 Sensorwerte:\n" + "\n".join(f"  • {r}" for r in results)
 
-    async def _execute_status_query(self, command: dict) -> str:
+    async def _execute_status_query(self, sub_type: str) -> str:
         """Execute status queries."""
-        sub_type = command.get("sub_type")
+        _LOGGER.debug(f"Executing status query: {sub_type}")
         
         controlled = self.get_controlled_entities(include_sensors=True)
         analyzer = SensorAnalyzer(self.hass, controlled)
         
+        # Mapping mit Alternativen
         query_map = {
             "temperatures": analyzer.analyze_temperatures,
+            "temperature": analyzer.analyze_temperatures,
+            "temp": analyzer.analyze_temperatures,
             "humidity": analyzer.analyze_humidity,
+            "feuchtigkeit": analyzer.analyze_humidity,
             "windows": analyzer.check_open_windows,
+            "fenster": analyzer.check_open_windows,
             "powered_on": analyzer.get_powered_on_devices,
+            "on": analyzer.get_powered_on_devices,
+            "eingeschaltet": analyzer.get_powered_on_devices,
             "battery": analyzer.check_battery_status,
+            "batterie": analyzer.check_battery_status,
             "offline": analyzer.check_offline_devices,
             "energy": analyzer.analyze_energy,
+            "energie": analyzer.analyze_energy,
             "climate_overview": analyzer.get_climate_overview,
+            "klima": analyzer.get_climate_overview,
             "motion": analyzer.check_motion_sensors,
+            "bewegung": analyzer.check_motion_sensors,
             "air_quality": analyzer.analyze_air_quality,
+            "luft": analyzer.analyze_air_quality,
             "all_sensors": analyzer.get_all_sensors_summary,
+            "alle": analyzer.get_all_sensors_summary,
             "device_summary": analyzer.get_device_summary,
+            "zusammenfassung": analyzer.get_device_summary,
             "last_activity": analyzer.get_last_activities,
+            "aktivität": analyzer.get_last_activities,
         }
         
-        if sub_type in query_map:
-            return query_map[sub_type]()
+        sub_type_lower = sub_type.lower()
         
-        return f"❌ Unbekannter Status-Typ: {sub_type}"
+        if sub_type_lower in query_map:
+            return query_map[sub_type_lower]()
+        
+        # Partielle Übereinstimmung
+        for key, func in query_map.items():
+            if key in sub_type_lower or sub_type_lower in key:
+                return func()
+        
+        _LOGGER.warning(f"Unknown status type: {sub_type}")
+        return f"❌ Unbekannter Status-Typ: {sub_type}\n\nVerfügbar: temperatures, humidity, windows, powered_on, battery, offline, energy"
 
     async def _execute_single_command(self, command: dict) -> str:
         """Execute a single control command."""
         domain = command.get("domain")
         entity_id = command.get("entity_id")
-        service = command.get("service")
+        service = command.get("service", "turn_on")
         service_data = command.get("data", {})
 
-        if not all([domain, entity_id, service]):
-            return "❌ Unvollständiger Befehl"
+        # Fallback: domain aus entity_id extrahieren
+        if not domain and entity_id and '.' in entity_id:
+            domain = entity_id.split('.')[0]
 
+        if not entity_id:
+            return "❌ Keine Entity-ID angegeben"
+
+        # Korrigiere Service-Namen
+        service_lower = service.lower()
+        if service_lower in ["on", "an", "ein"]:
+            service = "turn_on"
+        elif service_lower in ["off", "aus"]:
+            service = "turn_off"
+        elif service_lower in ["toggle", "umschalten"]:
+            service = "toggle"
+
+        # Prüfe ob Entity steuerbar
         controlled = self.get_controlled_entities(include_sensors=False)
         if entity_id not in controlled:
             suggestions = self._find_similar_entities(entity_id, controlled)
             if suggestions:
-                return f"❌ '{entity_id}' nicht verfügbar.\n\nMeintest du:\n{suggestions}"
+                return f"❌ '{entity_id}' nicht verfügbar.\n\nÄhnliche Geräte:\n{suggestions}"
             return f"❌ '{entity_id}' nicht verfügbar"
+
+        # Korrigiere Farbdaten
+        if "color" in service_data and "rgb_color" not in service_data:
+            service_data["rgb_color"] = service_data.pop("color")
 
         service_data["entity_id"] = entity_id
 
         try:
+            _LOGGER.info(f"Executing: {domain}.{service} on {entity_id} with {service_data}")
+            
             await self.hass.services.async_call(
                 domain, service, service_data, blocking=True
             )
@@ -309,7 +480,7 @@ class DeviceController:
             return self._build_confirmation(info['name'], service, service_data)
 
         except Exception as e:
-            _LOGGER.error(f"Error: {e}")
+            _LOGGER.error(f"Service call error: {e}")
             return f"❌ Fehler: {str(e)}"
 
     async def _execute_multiple_commands_parallel(self, commands: list[dict]) -> str:
@@ -333,15 +504,21 @@ class DeviceController:
         try:
             domain = command.get("domain")
             entity_id = command.get("entity_id")
-            service = command.get("service")
+            service = command.get("service", "turn_on")
             service_data = command.get("data", {})
 
-            if not all([domain, entity_id, service]):
+            if not domain and entity_id and '.' in entity_id:
+                domain = entity_id.split('.')[0]
+
+            if not all([domain, entity_id]):
                 return False
 
             controlled = self.get_controlled_entities(include_sensors=False)
             if entity_id not in controlled:
                 return False
+
+            if "color" in service_data and "rgb_color" not in service_data:
+                service_data["rgb_color"] = service_data.pop("color")
 
             service_data["entity_id"] = entity_id
             
