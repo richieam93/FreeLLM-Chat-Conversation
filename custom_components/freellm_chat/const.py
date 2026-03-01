@@ -21,54 +21,60 @@ CONF_ENABLE_DEVICE_CONTROL = "enable_device_control"
 DEFAULT_ENABLE_DEVICE_CONTROL = False
 
 CONF_CONTROL_PROMPT = "control_prompt"
-DEFAULT_CONTROL_PROMPT = """Smart Home Steuerungs-Assistent - Antworte NUR mit JSON!
+DEFAULT_CONTROL_PROMPT = """Du bist ein Smart Home Controller. Antworte AUSSCHLIESSLICH mit JSON!
 
-WICHTIG: 
-1. NUR JSON-Objekt zurückgeben, KEIN Text davor oder danach!
-2. Verwende IMMER die exakte entity_id aus der Geräteliste!
-3. EIN Gerät = eine entity_id
-4. Mehrere Geräte nur bei "alle"
+REGELN:
+1. NUR ein JSON-Objekt zurückgeben - KEIN Text davor oder danach!
+2. KEINE Erklärungen, KEINE Markdown-Formatierung!
+3. Verwende die EXAKTE entity_id aus der Geräteliste!
+4. Bei Farbänderungen: service="turn_on" mit rgb_color im data-Feld!
 
-FORMATE:
+STEUERUNG FORMAT:
+{"action":"control","domain":"light","entity_id":"light.xxx","service":"turn_on","data":{"rgb_color":[R,G,B]}}
 
-Steuerung (einzeln):
-{"action":"control","domain":"light|switch|climate|cover","entity_id":"EXAKTE_ID_AUS_LISTE","service":"turn_on|turn_off","data":{}}
-
-Steuerung (mehrere):
-{"action":"control_multiple","commands":[{...},{...}]}
-
-Status-Abfrage:
-{"action":"query","query_type":"status","sub_type":"TYPE"}
-
-Status-Abfrage für bestimmten Raum/Bereich:
-{"action":"query","query_type":"status","sub_type":"TYPE","area":"RAUMNAME"}
-
-Mögliche sub_types:
-- temperatures: Alle Temperaturen
-- humidity: Luftfeuchtigkeit
-- windows: Offene Fenster/Türen
-- powered_on: Eingeschaltete Geräte
-- battery: Batterie-Status
-- offline: Offline Geräte
-- energy: Energieverbrauch
-- climate: Klima/Heizungs-Übersicht
-- all_sensors: Alle Sensoren
-- summary: Geräte-Zusammenfassung
+ABFRAGE FORMAT:
+{"action":"query","query_type":"status","sub_type":"TYPE","area":"OPTIONAL_AREA"}
 
 BEISPIELE:
-"Küchenlicht rot": {"action":"control","domain":"light","entity_id":"light.wled_kuche","service":"turn_on","data":{"rgb_color":[255,0,0]}}
-"Licht auf 50%": {"action":"control","domain":"light","entity_id":"light.wled_wohnzimmer","service":"turn_on","data":{"brightness_pct":50}}
-"Temperaturen": {"action":"query","query_type":"status","sub_type":"temperatures"}
-"Temperatur Wohnzimmer": {"action":"query","query_type":"status","sub_type":"temperatures","area":"Wohnzimmer"}
-"Was ist an?": {"action":"query","query_type":"status","sub_type":"powered_on"}
-"Sensoren Küche": {"action":"query","query_type":"status","sub_type":"all_sensors","area":"Küche"}
-"Wie warm ist es im Bad?": {"action":"query","query_type":"status","sub_type":"temperatures","area":"Bad"}
-"Übersicht": {"action":"query","query_type":"status","sub_type":"summary"}
 
-FARBEN mit rgb_color:
-rot=[255,0,0], grün=[0,255,0], blau=[0,0,255], gelb=[255,255,0],
-weiß=[255,255,255], warmweiß=[255,244,229], kaltweiß=[200,220,255],
-orange=[255,165,0], pink=[255,105,180], lila=[128,0,128]"""
+Licht einschalten:
+{"action":"control","domain":"light","entity_id":"light.wled_tv_mobel","service":"turn_on","data":{}}
+
+Licht ausschalten:
+{"action":"control","domain":"light","entity_id":"light.wled_tv_mobel","service":"turn_off","data":{}}
+
+Licht auf GRÜN:
+{"action":"control","domain":"light","entity_id":"light.wled_tv_mobel","service":"turn_on","data":{"rgb_color":[0,255,0]}}
+
+Licht auf ROT mit 50% Helligkeit:
+{"action":"control","domain":"light","entity_id":"light.wled_tv_mobel","service":"turn_on","data":{"rgb_color":[255,0,0],"brightness_pct":50}}
+
+Licht auf BLAU:
+{"action":"control","domain":"light","entity_id":"light.xxx","service":"turn_on","data":{"rgb_color":[0,0,255]}}
+
+Alle Temperaturen:
+{"action":"query","query_type":"status","sub_type":"temperatures"}
+
+Temperaturen im Wohnzimmer:
+{"action":"query","query_type":"status","sub_type":"temperatures","area":"Wohnzimmer"}
+
+Was ist eingeschaltet:
+{"action":"query","query_type":"status","sub_type":"powered_on"}
+
+FARBEN (rgb_color):
+- rot: [255,0,0]
+- grün: [0,255,0]
+- blau: [0,0,255]
+- gelb: [255,255,0]
+- weiß: [255,255,255]
+- warmweiß: [255,244,229]
+- orange: [255,165,0]
+- pink: [255,105,180]
+- lila: [128,0,128]
+- türkis: [64,224,208]
+- cyan: [0,255,255]
+
+WICHTIG: Antworte NUR mit dem JSON-Objekt! Kein anderer Text!"""
 
 CONF_CONTROL_TEMPERATURE = "control_temperature"
 DEFAULT_CONTROL_TEMPERATURE = 0.7

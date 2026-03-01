@@ -5,6 +5,7 @@ import asyncio
 import logging
 import json
 import re
+import unicodedata
 from typing import Any
 from datetime import datetime, timedelta
 from collections import defaultdict
@@ -44,6 +45,147 @@ class DeviceController:
         self._area_registry = ar.async_get(hass)
         self._device_registry = dr.async_get(hass)
         self.color_manager = ColorManager(custom_colors)
+
+    # ==================== TEXT NORMALISIERUNG ====================
+
+    @staticmethod
+    def normalize_text(text: str) -> str:
+        """Normalize text by removing umlauts and special characters."""
+        if not text:
+            return ""
+        
+        # Umlaut-Mapping
+        umlaut_map = {
+            'ä': 'a', 'Ä': 'A',
+            'ö': 'o', 'Ö': 'O',
+            'ü': 'u', 'Ü': 'U',
+            'ß': 'ss',
+            'é': 'e', 'è': 'e', 'ê': 'e', 'ë': 'e',
+            'á': 'a', 'à': 'a', 'â': 'a', 'ã': 'a',
+            'ó': 'o', 'ò': 'o', 'ô': 'o', 'õ': 'o',
+            'ú': 'u', 'ù': 'u', 'û': 'u',
+            'í': 'i', 'ì': 'i', 'î': 'i', 'ï': 'i',
+            'ñ': 'n',
+            'ç': 'c',
+        }
+        
+        result = text.lower()
+        
+        # Ersetze Umlaute
+        for umlaut, replacement in umlaut_map.items():
+            result = result.replace(umlaut, replacement)
+            result = result.replace(umlaut.upper(), replacement.upper())
+        
+        # Entferne verbleibende Akzente via Unicode-Normalisierung
+        result = unicodedata.normalize('NFKD', result)
+        result = ''.join(c for c in result if not unicodedata.combining(c))
+        
+        return result
+
+    @staticmethod
+    def normalize_entity_id(text: str) -> str:
+        """Normalize text to match entity_id format."""
+        normalized = DeviceController.normalize_text(text)
+        
+        # Ersetze Trennzeichen durch Unterstriche
+        normalized = normalized.replace('-', '_')
+        normalized = normalized.replace(' ', '_')
+        normalized = normalized.replace('.', '_')
+        normalized = normalized.replace('/', '_')
+        
+        # Entferne nicht-alphanumerische Zeichen (außer Unterstrich)
+        normalized = re.sub(r'[^a-z0-9_]', '', normalized)
+        
+        # Entferne doppelte Unterstriche
+        while '__' in normalized:
+            normalized = normalized.replace('__', '_')
+        
+        # Entferne führende/trailing Unterstriche
+        normalized = normalized.strip('_')
+        
+        return normalized
+
+    # ==================== ENTITY SUCHE ====================
+
+    def find_entity_by_name(self, search_term: str) -> str | None:
+        """Find entity_id by searching name, allowing for umlaut variations."""
+        controlled = self.get_controlled_entities(include_sensors=False)
+        
+        if not search_term:
+            return None
+        
+        # Normalisiere Suchbegriff
+        search_normalized = self.normalize_entity_id(search_term)
+        search_lower = search_term.lower()
+        
+        _LOGGER.debug(f"Searching for entity: '{search_term}' (normalized: '{search_normalized}')")
+        
+        best_match = None
+        best_score = 0
+        
+        for entity_id, info in controlled.items():
+            # Extrahiere verschiedene Vergleichswerte
+            eid_short = entity_id.split('.')[-1]  # z.B. "wled_tv_mobel"
+            eid_normalized = self.normalize_entity_id(eid_short)
+            
+            name = info.get('name', '')
+            name_lower = name.lower()
+            name_normalized = self.normalize_entity_id(name)
+            
+            # Berechne Übereinstimmungs-Score
+            score = 0
+            
+            # Exakte Übereinstimmung (höchste Priorität)
+            if search_lower == eid_short or search_lower == name_lower:
+                score = 100
+            elif search_normalized == eid_normalized or search_normalized == name_normalized:
+                score = 95
+            
+            # Suchbegriff ist Teil der entity_id
+            elif search_normalized in eid_normalized:
+                score = 80 + (len(search_normalized) / len(eid_normalized) * 10)
+            elif search_lower in eid_short:
+                score = 75
+            
+            # Suchbegriff ist Teil des Namens
+            elif search_normalized in name_normalized:
+                score = 70 + (len(search_normalized) / len(name_normalized) * 10)
+            elif search_lower in name_lower:
+                score = 65
+            
+            # Entity-ID/Name ist Teil des Suchbegriffs
+            elif eid_normalized in search_normalized:
+                score = 60
+            elif name_normalized in search_normalized:
+                score = 55
+            
+            # Wort-basierte Übereinstimmung
+            else:
+                search_words = set(search_normalized.replace('_', ' ').split())
+                eid_words = set(eid_normalized.replace('_', ' ').split())
+                name_words = set(name_normalized.replace('_', ' ').split())
+                
+                common_eid = search_words & eid_words
+                common_name = search_words & name_words
+                
+                if common_eid:
+                    score = 30 + len(common_eid) * 10
+                if common_name:
+                    score = max(score, 25 + len(common_name) * 10)
+            
+            if score > best_score:
+                best_score = score
+                best_match = entity_id
+                _LOGGER.debug(f"  Candidate: {entity_id} ({info['name']}) - Score: {score}")
+        
+        if best_match and best_score >= 30:
+            _LOGGER.info(f"Found entity '{best_match}' for search '{search_term}' (score: {best_score})")
+            return best_match
+        
+        _LOGGER.debug(f"No entity found for '{search_term}'")
+        return None
+
+    # ==================== ENTITY VERWALTUNG ====================
 
     def get_controlled_entities(self, include_sensors: bool = True) -> dict[str, dict]:
         """Get all entities that can be controlled based on selection."""
@@ -167,7 +309,7 @@ class DeviceController:
             
             if categories['control']:
                 for entity_id, info in sorted(categories['control'], key=lambda x: x[1]['name']):
-                    context += f"  • {info['name']}({entity_id.split('.')[-1]})[{info['state']}]\n"
+                    context += f"  • {info['name']} → {entity_id} [{info['state']}]\n"
             
             if categories['sensor']:
                 for entity_id, info in sorted(categories['sensor'], key=lambda x: x[1]['name'])[:5]:
@@ -184,13 +326,13 @@ class DeviceController:
 
     async def execute_command(self, response: str) -> str | None:
         """Parse and execute commands from LLM response."""
-        _LOGGER.debug(f"Parsing response: {response[:200]}...")
+        _LOGGER.debug(f"Parsing response: {response[:300]}...")
         
         try:
             command = self._parse_llm_response(response)
             
             if command is None:
-                _LOGGER.warning(f"Could not parse command from: {response[:100]}")
+                _LOGGER.warning(f"Could not parse command from: {response[:200]}")
                 return None
 
             _LOGGER.debug(f"Parsed command: {command}")
@@ -215,11 +357,16 @@ class DeviceController:
                 return None
 
         except Exception as e:
-            _LOGGER.error(f"Error executing command: {e}")
+            _LOGGER.error(f"Error executing command: {e}", exc_info=True)
             return f"❌ Fehler: {str(e)}"
+
+    # ==================== JSON PARSING ====================
 
     def _parse_llm_response(self, response: str) -> dict | None:
         """Parse LLM response with flexible JSON handling."""
+        _LOGGER.debug(f"=== PARSING LLM RESPONSE ===")
+        _LOGGER.debug(f"Raw response ({len(response)} chars): {response[:500]}...")
+        
         clean = response.strip()
         
         # Entferne Markdown Code-Blöcke
@@ -231,29 +378,40 @@ class DeviceController:
         clean = re.sub(r'<think>.*?</think>', '', clean, flags=re.DOTALL)
         clean = clean.strip()
         
-        # Versuche gesamte Response als JSON
+        _LOGGER.debug(f"Cleaned response: {clean[:300]}...")
+        
+        # Methode 1: Versuche gesamte Response als JSON
         try:
             parsed = json.loads(clean)
             if isinstance(parsed, dict):
+                _LOGGER.info(f"✓ Direct JSON parse successful: {parsed}")
                 return parsed
-        except json.JSONDecodeError:
-            pass
+        except json.JSONDecodeError as e:
+            _LOGGER.debug(f"Direct JSON parse failed: {e}")
         
-        # Finde JSON-Objekte (auch verschachtelte)
+        # Methode 2: Finde JSON-Objekte im Text
         json_objects = self._extract_json_objects(clean)
-        for obj in json_objects:
+        _LOGGER.debug(f"Found {len(json_objects)} JSON objects in response")
+        
+        for i, obj in enumerate(json_objects):
+            _LOGGER.debug(f"Trying JSON object {i+1}: {obj[:100]}...")
             try:
                 parsed = json.loads(obj)
                 if isinstance(parsed, dict) and ("action" in parsed or "entity_id" in parsed):
+                    _LOGGER.info(f"✓ Extracted JSON from object {i+1}: {parsed}")
                     return parsed
-            except json.JSONDecodeError:
+            except json.JSONDecodeError as e:
+                _LOGGER.debug(f"JSON object {i+1} parse failed: {e}")
                 continue
         
-        # Letzter Versuch: Repariere kaputtes JSON
+        # Methode 3: Repariere kaputtes JSON / extrahiere aus Text
+        _LOGGER.debug("Attempting JSON repair...")
         repaired = self._repair_json(clean)
         if repaired:
+            _LOGGER.info(f"✓ Repaired JSON: {repaired}")
             return repaired
         
+        _LOGGER.warning(f"✗ Could not parse any JSON from response")
         return None
 
     def _extract_json_objects(self, text: str) -> list[str]:
@@ -264,46 +422,126 @@ class DeviceController:
             if text[i] == '{':
                 depth = 0
                 start = i
+                in_string = False
+                escape_next = False
+                
                 while i < len(text):
-                    if text[i] == '{':
-                        depth += 1
-                    elif text[i] == '}':
-                        depth -= 1
-                        if depth == 0:
-                            objects.append(text[start:i+1])
-                            break
+                    char = text[i]
+                    
+                    if escape_next:
+                        escape_next = False
+                    elif char == '\\':
+                        escape_next = True
+                    elif char == '"' and not escape_next:
+                        in_string = not in_string
+                    elif not in_string:
+                        if char == '{':
+                            depth += 1
+                        elif char == '}':
+                            depth -= 1
+                            if depth == 0:
+                                obj = text[start:i+1]
+                                objects.append(obj)
+                                break
                     i += 1
             i += 1
         return objects
 
     def _repair_json(self, text: str) -> dict | None:
-        """Try to repair broken JSON."""
+        """Try to repair broken JSON or extract command from text."""
+        _LOGGER.debug(f"=== REPAIRING JSON ===")
+        _LOGGER.debug(f"Input text: {text[:300]}...")
+        
         try:
-            # Finde action
+            # ===== FINDE ACTION =====
             action_match = re.search(r'"action"\s*:\s*"(\w+)"', text)
             action = action_match.group(1) if action_match else None
+            _LOGGER.debug(f"Found action: {action}")
             
             if action in ["cont", "ctrl"]:
                 action = "control"
             
-            # Finde entity_id
+            # ===== FINDE ENTITY_ID =====
+            entity_id = None
+            
+            # Format: "entity_id":"light.xxx"
             entity_match = re.search(r'"entity_id"\s*:\s*"([^"]+)"', text)
-            entity_id = entity_match.group(1) if entity_match else None
+            if entity_match:
+                entity_id = entity_match.group(1)
+                _LOGGER.debug(f"Found entity_id in JSON: {entity_id}")
             
-            # Finde Farbe
+            # Alternative: Finde entity_id Pattern im Text
+            if not entity_id:
+                entity_match = re.search(
+                    r'(light|switch|climate|cover|fan|media_player|sensor|binary_sensor)\.[a-z0-9_äöüß]+', 
+                    text.lower()
+                )
+                if entity_match:
+                    entity_id = entity_match.group(0)
+                    _LOGGER.debug(f"Found entity_id pattern: {entity_id}")
+            
+            # Normalisiere und suche Entity
+            if entity_id:
+                controlled = self.get_controlled_entities(include_sensors=False)
+                if entity_id not in controlled:
+                    _LOGGER.debug(f"Entity '{entity_id}' not in controlled list, searching...")
+                    found = self.find_entity_by_name(entity_id)
+                    if found:
+                        _LOGGER.info(f"Mapped '{entity_id}' -> '{found}'")
+                        entity_id = found
+            
+            # ===== FINDE FARBE =====
             rgb_color = None
-            color_match = re.search(r'"(?:color|rgb_color|rgb)"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)', text)
-            if color_match:
-                rgb_color = [int(color_match.group(1)), int(color_match.group(2)), int(color_match.group(3))]
             
-            # Finde Helligkeit
+            # Format: "rgb_color":[0,255,0] oder "color":[0,255,0]
+            color_match = re.search(
+                r'"(?:color|rgb_color|rgb)"\s*:\s*\[\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*\]', 
+                text
+            )
+            if color_match:
+                rgb_color = [
+                    int(color_match.group(1)), 
+                    int(color_match.group(2)), 
+                    int(color_match.group(3))
+                ]
+                _LOGGER.debug(f"Found rgb_color in JSON: {rgb_color}")
+            
+            # Suche nach Farbnamen im Text (inkl. Umlaute)
+            if not rgb_color:
+                text_lower = text.lower()
+                text_normalized = self.normalize_text(text)
+                
+                _LOGGER.debug(f"Searching for color names in: {text_normalized[:100]}...")
+                
+                for color_name, rgb in COLOR_PRESETS.items():
+                    color_normalized = self.normalize_text(color_name)
+                    
+                    # Prüfe beide Varianten
+                    if color_name in text_lower or color_normalized in text_normalized:
+                        rgb_color = rgb
+                        _LOGGER.info(f"Found color name '{color_name}' -> {rgb}")
+                        break
+            
+            # ===== FINDE HELLIGKEIT =====
             brightness = None
+            
+            # Format: "brightness":100 oder "brightness_pct":50
             brightness_match = re.search(r'"brightness(?:_pct)?"\s*:\s*(\d+)', text)
             if brightness_match:
                 brightness = int(brightness_match.group(1))
+                _LOGGER.debug(f"Found brightness in JSON: {brightness}")
             
-            # Finde state/service
+            # Alternative: Finde Prozent im Text
+            if brightness is None:
+                pct_match = re.search(r'(\d+)\s*(%|prozent)', text.lower())
+                if pct_match:
+                    brightness = int(pct_match.group(1))
+                    _LOGGER.debug(f"Found brightness in text: {brightness}%")
+            
+            # ===== FINDE SERVICE =====
             service = "turn_on"
+            
+            # Format: "service":"turn_off"
             state_match = re.search(r'"(?:state|service)"\s*:\s*"(\w+)"', text)
             if state_match:
                 state_val = state_match.group(1).lower()
@@ -311,13 +549,19 @@ class DeviceController:
                     service = "turn_off"
                 elif state_val in ["toggle", "umschalten"]:
                     service = "toggle"
+                _LOGGER.debug(f"Found service in JSON: {service}")
             
-            # Für Query
+            # Alternative: Suche nach Schlüsselwörtern
+            text_lower = text.lower()
+            if any(word in text_lower for word in ["ausschalten", " aus ", "turn off", "ausmachen", "aus!"]):
+                service = "turn_off"
+                _LOGGER.debug(f"Found 'off' keyword, service: turn_off")
+            
+            # ===== FÜR QUERY =====
             if action == "query":
                 type_match = re.search(r'"(?:type|sub_type|query_type)"\s*:\s*"([^"]+)"', text)
                 query_type = type_match.group(1) if type_match else "temperatures"
                 
-                # Suche nach area/room Filter
                 area_match = re.search(r'"(?:area|room|raum|bereich)"\s*:\s*"([^"]+)"', text)
                 area_filter = area_match.group(1) if area_match else None
                 
@@ -328,9 +572,11 @@ class DeviceController:
                 }
                 if area_filter:
                     result["area"] = area_filter
+                
+                _LOGGER.info(f"Built query command: {result}")
                 return result
             
-            # Für Control
+            # ===== FÜR CONTROL =====
             if entity_id:
                 domain = entity_id.split('.')[0] if '.' in entity_id else "light"
                 
@@ -351,13 +597,14 @@ class DeviceController:
                     else:
                         result["data"]["brightness_pct"] = brightness
                 
-                _LOGGER.info(f"Repaired JSON: {result}")
+                _LOGGER.info(f"Built control command: {result}")
                 return result
             
+            _LOGGER.debug("Could not build command - no entity_id found")
             return None
             
         except Exception as e:
-            _LOGGER.debug(f"JSON repair failed: {e}")
+            _LOGGER.error(f"JSON repair failed with exception: {e}", exc_info=True)
             return None
 
     # ==================== QUERY HANDLING ====================
@@ -401,14 +648,13 @@ class DeviceController:
                     None
                 )
         
-        # Area aus sub_type extrahieren (z.B. "temperature_wohnzimmer" oder "temperatures wohnzimmer")
+        # Area aus sub_type extrahieren (z.B. "temperature_wohnzimmer")
         if not area_filter and sub_type:
             area_filter = self._extract_area_from_query(sub_type)
             if area_filter:
-                # Bereinige sub_type
                 sub_type = self._clean_sub_type(sub_type, area_filter)
         
-        _LOGGER.debug(f"Query - query_type: {query_type}, sub_type: '{sub_type}', area_filter: '{area_filter}'")
+        _LOGGER.debug(f"Query - query_type: '{query_type}', sub_type: '{sub_type}', area_filter: '{area_filter}'")
         
         # Wenn query_type == "sensor", dann entity_ids abfragen
         if query_type == "sensor":
@@ -427,31 +673,33 @@ class DeviceController:
         controlled = self.get_controlled_entities(include_sensors=True)
         
         # Sammle alle verfügbaren Bereichsnamen
-        available_areas = set()
+        available_areas = {}
         for info in controlled.values():
             if info['area']:
-                available_areas.add(info['area'].lower())
+                area_lower = info['area'].lower()
+                area_normalized = self.normalize_text(info['area'])
+                available_areas[area_lower] = info['area']
+                available_areas[area_normalized] = info['area']
         
         if not available_areas:
             return None
         
         sub_type_lower = sub_type.lower()
+        sub_type_normalized = self.normalize_text(sub_type)
         
         # Prüfe ob ein Bereichsname im sub_type enthalten ist
-        for area_name in sorted(available_areas, key=len, reverse=True):
-            # Prüfe verschiedene Trennzeichen
-            if area_name in sub_type_lower:
-                # Finde den originalen Bereichsnamen (mit korrekter Groß-/Kleinschreibung)
-                for info in controlled.values():
-                    if info['area'] and info['area'].lower() == area_name:
-                        return info['area']
+        for area_key, area_original in sorted(available_areas.items(), key=lambda x: len(x[0]), reverse=True):
+            if area_key in sub_type_lower or area_key in sub_type_normalized:
+                return area_original
         
         return None
 
     def _clean_sub_type(self, sub_type: str, area_name: str) -> str:
         """Remove area name from sub_type and clean it up."""
-        # Entferne den Bereichsnamen
-        cleaned = sub_type.lower().replace(area_name.lower(), '')
+        # Entferne den Bereichsnamen (beide Varianten)
+        cleaned = sub_type.lower()
+        cleaned = cleaned.replace(area_name.lower(), '')
+        cleaned = cleaned.replace(self.normalize_text(area_name), '')
         
         # Entferne Trennzeichen
         cleaned = cleaned.strip('_ -/')
@@ -481,6 +729,12 @@ class DeviceController:
         results = []
         
         for entity_id in entity_ids:
+            # Versuche Entity zu finden (mit Normalisierung)
+            if entity_id not in controlled:
+                found = self.find_entity_by_name(entity_id)
+                if found:
+                    entity_id = found
+            
             if entity_id not in controlled:
                 continue
             
@@ -508,24 +762,20 @@ class DeviceController:
         if area_filter:
             filtered = {}
             area_filter_lower = area_filter.lower()
+            area_filter_normalized = self.normalize_text(area_filter)
             
             for entity_id, info in controlled.items():
-                entity_area = (info.get('area') or '').lower()
+                entity_area = info.get('area') or ''
+                entity_area_lower = entity_area.lower()
+                entity_area_normalized = self.normalize_text(entity_area)
                 
                 # Flexible Bereichs-Übereinstimmung
-                if (area_filter_lower in entity_area or 
-                    entity_area in area_filter_lower or
-                    area_filter_lower == entity_area):
+                if (area_filter_lower in entity_area_lower or 
+                    entity_area_lower in area_filter_lower or
+                    area_filter_normalized in entity_area_normalized or
+                    entity_area_normalized in area_filter_normalized or
+                    area_filter_lower == entity_area_lower):
                     filtered[entity_id] = info
-            
-            if not filtered:
-                # Versuche partielle Übereinstimmung
-                for entity_id, info in controlled.items():
-                    entity_area = (info.get('area') or '').lower()
-                    # Teile den Bereichsnamen in Wörter und prüfe einzeln
-                    area_words = area_filter_lower.split()
-                    if any(word in entity_area for word in area_words):
-                        filtered[entity_id] = info
             
             if filtered:
                 controlled = filtered
@@ -604,6 +854,7 @@ class DeviceController:
             "bewegung": analyzer.check_motion_sensors,
             "presence": analyzer.check_motion_sensors,
             "präsenz": analyzer.check_motion_sensors,
+            "praesenz": analyzer.check_motion_sensors,
             
             # Luftqualität
             "air_quality": analyzer.analyze_air_quality,
@@ -639,9 +890,10 @@ class DeviceController:
         }
         
         sub_type_lower = sub_type.lower().strip()
+        sub_type_normalized = self.normalize_text(sub_type)
         
         # Entferne Leerzeichen und Unterstriche für flexibleres Matching
-        sub_type_clean = sub_type_lower.replace(' ', '').replace('_', '').replace('-', '')
+        sub_type_clean = sub_type_normalized.replace(' ', '').replace('_', '').replace('-', '')
         
         # Direkte Übereinstimmung
         if sub_type_lower in query_map:
@@ -650,10 +902,19 @@ class DeviceController:
                 result = f"📍 **Bereich: {area_filter}**\n\n" + result
             return result
         
+        # Normalisierte Übereinstimmung
+        if sub_type_normalized in query_map:
+            result = query_map[sub_type_normalized]()
+            if area_filter:
+                result = f"📍 **Bereich: {area_filter}**\n\n" + result
+            return result
+        
         # Bereinigte Übereinstimmung (ohne Trennzeichen)
         for key, func in query_map.items():
             key_clean = key.replace('_', '').replace(' ', '').replace('-', '')
-            if sub_type_clean == key_clean:
+            key_normalized = self.normalize_text(key)
+            
+            if sub_type_clean == key_clean or sub_type_clean == key_normalized.replace('_', ''):
                 result = func()
                 if area_filter:
                     result = f"📍 **Bereich: {area_filter}**\n\n" + result
@@ -662,15 +923,6 @@ class DeviceController:
         # Partielle Übereinstimmung
         for key, func in query_map.items():
             if key in sub_type_lower or sub_type_lower in key:
-                result = func()
-                if area_filter:
-                    result = f"📍 **Bereich: {area_filter}**\n\n" + result
-                return result
-        
-        # Erweiterte partielle Übereinstimmung (ohne Trennzeichen)
-        for key, func in query_map.items():
-            key_clean = key.replace('_', '').replace(' ', '')
-            if key_clean in sub_type_clean or sub_type_clean in key_clean:
                 result = func()
                 if area_filter:
                     result = f"📍 **Bereich: {area_filter}**\n\n" + result
@@ -694,14 +946,7 @@ class DeviceController:
                 result = f"📍 **Bereich: {area_filter}**\n\n" + result
             return result
         
-        _LOGGER.warning(f"Unknown status type: '{sub_type}' (cleaned: '{sub_type_clean}')")
-        
-        # Versuche trotzdem eine sinnvolle Antwort zu geben
-        # Prüfe ob sub_type ein Bereichsname ist
-        for info in controlled.values():
-            if info['area'] and sub_type_lower in info['area'].lower():
-                # Es ist ein Bereichsname - zeige alle Sensoren dieses Bereichs
-                return await self._execute_status_query("all_sensors", sub_type)
+        _LOGGER.warning(f"Unknown status type: '{sub_type}'")
         
         return (
             f"❌ Unbekannter Abfragetyp: '{sub_type}'\n\n"
@@ -743,6 +988,29 @@ class DeviceController:
         service = self._normalize_service(service)
 
         controlled = self.get_controlled_entities(include_sensors=False)
+        
+        # Prüfe ob Entity direkt existiert
+        if entity_id not in controlled:
+            _LOGGER.debug(f"Entity '{entity_id}' not found directly, trying fuzzy match...")
+            
+            # Versuche Entity zu finden (mit Umlaut-Normalisierung)
+            found_entity = self.find_entity_by_name(entity_id)
+            
+            if found_entity:
+                _LOGGER.info(f"Mapped '{entity_id}' -> '{found_entity}'")
+                entity_id = found_entity
+                domain = entity_id.split('.')[0]
+            else:
+                # Versuche nur den Namen-Teil (nach dem Punkt)
+                if '.' in entity_id:
+                    name_part = entity_id.split('.')[-1]
+                    found_entity = self.find_entity_by_name(name_part)
+                    if found_entity:
+                        _LOGGER.info(f"Mapped name '{name_part}' -> '{found_entity}'")
+                        entity_id = found_entity
+                        domain = entity_id.split('.')[0]
+        
+        # Immer noch nicht gefunden?
         if entity_id not in controlled:
             suggestions = self._find_similar_entities(entity_id, controlled)
             if suggestions:
@@ -803,6 +1071,14 @@ class DeviceController:
                 return False
 
             controlled = self.get_controlled_entities(include_sensors=False)
+            
+            # Versuche Entity zu finden
+            if entity_id not in controlled:
+                found = self.find_entity_by_name(entity_id)
+                if found:
+                    entity_id = found
+                    domain = entity_id.split('.')[0]
+            
             if entity_id not in controlled:
                 return False
 
@@ -833,14 +1109,20 @@ class DeviceController:
             "an": "turn_on",
             "ein": "turn_on",
             "einschalten": "turn_on",
+            "anschalten": "turn_on",
+            "anmachen": "turn_on",
             "turn_on": "turn_on",
+            
             "off": "turn_off",
             "aus": "turn_off",
             "ausschalten": "turn_off",
+            "ausmachen": "turn_off",
             "turn_off": "turn_off",
+            
             "toggle": "toggle",
             "umschalten": "toggle",
             "wechseln": "toggle",
+            
             "set_temperature": "set_temperature",
             "set_hvac_mode": "set_hvac_mode",
             "set_position": "set_position",
@@ -901,7 +1183,7 @@ class DeviceController:
                     result["position"] = max(0, min(100, int(value)))
             
             # ===== LAUTSTÄRKE =====
-            elif key_lower in ["volume", "volume_level", "lautstärke"]:
+            elif key_lower in ["volume", "volume_level", "lautstärke", "lautstaerke"]:
                 if isinstance(value, (int, float)):
                     if value > 1:
                         result["volume_level"] = value / 100
@@ -921,12 +1203,14 @@ class DeviceController:
         if service == "turn_on":
             msg += " eingeschaltet"
             
+            details = []
+            
             if "brightness_pct" in data:
-                msg += f" ({data['brightness_pct']}%)"
+                details.append(f"{data['brightness_pct']}%")
             
             if "rgb_color" in data:
                 color_name = self.color_manager.get_color_name(data['rgb_color'])
-                msg += f" ({color_name})"
+                details.append(color_name)
             
             if "color_temp_kelvin" in data:
                 kelvin = data['color_temp_kelvin']
@@ -936,7 +1220,10 @@ class DeviceController:
                     temp_name = "neutral"
                 else:
                     temp_name = "kaltweiß"
-                msg += f" ({temp_name}, {kelvin}K)"
+                details.append(f"{temp_name} ({kelvin}K)")
+            
+            if details:
+                msg += f" ({', '.join(details)})"
                 
         elif service == "turn_off":
             msg += " ausgeschaltet"
@@ -969,13 +1256,26 @@ class DeviceController:
         """Find similar entity IDs for suggestions."""
         suggestions = []
         
-        search_parts = entity_id.lower().replace("_", " ").replace(".", " ").split()
+        # Normalisiere Suchbegriff
+        search_normalized = self.normalize_entity_id(entity_id)
+        search_parts = set(search_normalized.replace('_', ' ').split())
         
         for eid, info in controlled.items():
-            eid_lower = eid.lower().replace("_", " ").replace(".", " ")
-            name_lower = info['name'].lower()
+            eid_short = eid.split('.')[-1]
+            eid_normalized = self.normalize_entity_id(eid_short)
+            name_normalized = self.normalize_entity_id(info['name'])
             
-            matches = sum(1 for word in search_parts if word in eid_lower or word in name_lower)
+            # Berechne Übereinstimmungen
+            eid_words = set(eid_normalized.replace('_', ' ').split())
+            name_words = set(name_normalized.replace('_', ' ').split())
+            
+            matches = len(search_parts & eid_words) + len(search_parts & name_words)
+            
+            # Teilstring-Übereinstimmung
+            if search_normalized in eid_normalized or eid_normalized in search_normalized:
+                matches += 3
+            if search_normalized in name_normalized or name_normalized in search_normalized:
+                matches += 3
             
             if matches > 0:
                 suggestions.append((matches, f"  • {info['name']} ({eid})"))
@@ -986,7 +1286,14 @@ class DeviceController:
 
     def is_entity_controlled(self, entity_id: str) -> bool:
         """Check if an entity is in the controlled list."""
-        return entity_id in self.get_controlled_entities(include_sensors=False)
+        controlled = self.get_controlled_entities(include_sensors=False)
+        
+        if entity_id in controlled:
+            return True
+        
+        # Versuche mit Normalisierung
+        found = self.find_entity_by_name(entity_id)
+        return found is not None
 
     def clear_cache(self) -> None:
         """Clear the entity cache."""

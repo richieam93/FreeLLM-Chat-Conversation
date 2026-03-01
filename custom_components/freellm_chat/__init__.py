@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Literal
 import time
+import re
 
 import aiohttp
 import asyncio
@@ -45,6 +46,7 @@ from .const import (
     DEFAULT_RETRY_COUNT,
     DOMAIN,
     LLM7_BASE_URL,
+    COLOR_PRESETS,
 )
 from .device_control import DeviceController
 
@@ -111,22 +113,97 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
 
     def _is_control_or_query(self, text: str) -> bool:
         """Check if the request is a device control or sensor query."""
-        keywords = [
+        text_lower = text.lower()
+        
+        # Aktions-Keywords (Steuerung)
+        action_keywords = [
+            # Schalten
             "schalte", "schalt", "mach", "mache", "stelle", "stell",
-            "dimme", "dimm", "erhöhe", "verringere", "öffne", "schließe",
-            "starte", "stoppe", "spiele", "pausiere", "aktiviere",
-            "licht", "lampe", "heizung", "jalousie", "rollladen",
-            " an", " aus", " ein",
-            "temperatur", "wie warm", "wie kalt", "grad",
-            "luftfeuchtigkeit", "feuchtigkeit",
-            "sensor", "status",
-            "zeig mir", "was ist", "wie ist", "welche",
-            "fenster", "tür", "offen", "geschlossen",
-            "eingeschaltet", "batterie", "offline",
+            "schalten", "einschalten", "ausschalten", "anschalten",
+            # Dimmen
+            "dimme", "dimm", "erhöhe", "verringere", "heller", "dunkler",
+            # Öffnen/Schließen
+            "öffne", "schließe", "öffnen", "schließen",
+            # Starten/Stoppen
+            "starte", "stoppe", "spiele", "pausiere", "aktiviere", "deaktiviere",
+            # Setzen/Ändern
+            "setze", "ändere", "ändern", "wechsle", "wechsel",
+            # Farben
+            "färbe", "farbe", "färben",
+            # Direkte Befehle
+            " an", " aus", " ein", "anmachen", "ausmachen",
+            # Englisch
+            "turn on", "turn off", "switch", "toggle",
         ]
         
-        text_lower = text.lower()
-        return any(keyword in text_lower for keyword in keywords)
+        # Farb-Keywords
+        color_keywords = list(COLOR_PRESETS.keys()) + [
+            "rot", "grün", "blau", "gelb", "weiß", "schwarz",
+            "orange", "pink", "lila", "violett", "türkis", "cyan",
+            "warm", "kalt", "bunt", "regenbogen",
+        ]
+        
+        # Geräte-Keywords
+        device_keywords = [
+            "licht", "lampe", "lampen", "lichter", "leuchte",
+            "heizung", "thermostat", "klimaanlage", "klima",
+            "jalousie", "rollladen", "rollo", "rolladen",
+            "steckdose", "schalter", "stecker",
+            "fernseher", "tv", "musik", "lautsprecher", "speaker",
+            "ventilator", "lüfter", "fan",
+            "wled", "led", "stripe", "streifen",
+        ]
+        
+        # Abfrage-Keywords (Sensoren)
+        query_keywords = [
+            "temperatur", "wie warm", "wie kalt", "grad", "celsius",
+            "luftfeuchtigkeit", "feuchtigkeit", "humidity",
+            "sensor", "sensoren", "status", "zustand",
+            "zeig mir", "zeige mir", "was ist", "wie ist", "welche",
+            "fenster", "tür", "türen", "offen", "geschlossen",
+            "eingeschaltet", "ausgeschaltet", "aktiv",
+            "batterie", "batterien", "akku",
+            "offline", "nicht erreichbar", "verfügbar",
+            "energie", "strom", "verbrauch", "watt",
+            "übersicht", "zusammenfassung", "alle",
+        ]
+        
+        # Entity-ID Pattern (light.xxx, switch.xxx, etc.)
+        entity_pattern = r'\b(light|switch|climate|cover|fan|media_player|sensor|binary_sensor)\.[a-z0-9_]+\b'
+        if re.search(entity_pattern, text_lower):
+            _LOGGER.debug(f"Entity ID pattern found in: {text}")
+            return True
+        
+        # Prüfe auf Aktions-Keywords
+        for keyword in action_keywords:
+            if keyword in text_lower:
+                _LOGGER.debug(f"Action keyword found: {keyword}")
+                return True
+        
+        # Prüfe auf Kombination: Gerät + Farbe
+        has_device = any(kw in text_lower for kw in device_keywords)
+        has_color = any(kw in text_lower for kw in color_keywords)
+        if has_device and has_color:
+            _LOGGER.debug(f"Device + Color combination found")
+            return True
+        
+        # Prüfe auf Abfrage-Keywords
+        for keyword in query_keywords:
+            if keyword in text_lower:
+                _LOGGER.debug(f"Query keyword found: {keyword}")
+                return True
+        
+        # Prüfe auf Prozent-Angaben (Helligkeit)
+        if re.search(r'\d+\s*(%|prozent)', text_lower):
+            _LOGGER.debug(f"Percentage found")
+            return True
+        
+        # Prüfe auf "bitte" + Gerätename (höfliche Befehle)
+        if "bitte" in text_lower and has_device:
+            _LOGGER.debug(f"Polite device command found")
+            return True
+        
+        return False
 
     async def _handle_control_request(
         self, 
@@ -136,7 +213,6 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
         """Handle device control and sensor query requests."""
         start_time = time.time()
         
-        # Hole alle Einstellungen
         model_name = self.entry.options.get(CONF_CHAT_MODEL, DEFAULT_CHAT_MODEL)
         control_prompt = self.entry.options.get(CONF_CONTROL_PROMPT, DEFAULT_CONTROL_PROMPT)
         control_temperature = float(self.entry.options.get(CONF_CONTROL_TEMPERATURE, DEFAULT_CONTROL_TEMPERATURE))
@@ -149,12 +225,10 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
 
         _LOGGER.debug(f"Control request - Model: {model_name}, Timeout: {timeout}s")
 
-        # Controller initialisieren
         controller = DeviceController(
             self.hass, selected_entities, selected_areas, enable_sensors
         )
         
-        # Prüfe ob Geräte verfügbar
         controlled = controller.get_controlled_entities(include_sensors=True)
         entity_count = len(controlled)
         
@@ -167,22 +241,27 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 conversation_id
             )
         
-        # Prompt erstellen (immer voll, keine Komprimierung)
         entity_context = controller.generate_context()
-        full_prompt = control_prompt + entity_context
         
-        _LOGGER.debug(f"Prompt length: {len(full_prompt)} chars")
+        # Verstärke den Prompt mit deutlicherer Anweisung
+        reinforced_prompt = (
+            "WICHTIG: Du bist ein Smart Home Controller. "
+            "Antworte AUSSCHLIESSLICH mit einem JSON-Objekt! "
+            "KEIN erklärender Text, KEINE Markdown-Formatierung, NUR JSON!\n\n"
+            + control_prompt 
+            + entity_context
+        )
+        
+        _LOGGER.debug(f"Prompt length: {len(reinforced_prompt)} chars")
+        _LOGGER.info(f"User command: {user_input.text}")
 
-        # LLM-Anfrage
-        _LOGGER.info(f"Sending LLM request - Model: {model_name}, Prompt: {len(full_prompt)} chars")
-        
         response_text = None
         last_error = None
         
         for attempt in range(retry_count + 1):
             try:
                 messages = [
-                    {"role": "system", "content": full_prompt},
+                    {"role": "system", "content": reinforced_prompt},
                     {"role": "user", "content": user_input.text}
                 ]
                 
@@ -198,7 +277,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 
                 elapsed = time.time() - start_time
                 _LOGGER.info(f"LLM response received in {elapsed:.1f}s")
-                _LOGGER.debug(f"Response: {response_text[:200] if response_text else 'None'}...")
+                _LOGGER.info(f"LLM Response: {response_text[:500] if response_text else 'None'}")
                 break
                 
             except Exception as e:
@@ -217,7 +296,7 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
                 conversation_id
             )
 
-        # Befehl ausführen
+        # Versuche Befehl auszuführen
         result = await controller.execute_command(response_text)
 
         if result:
@@ -225,16 +304,100 @@ class FreeLLMChatAgent(conversation.AbstractConversationAgent):
             _LOGGER.info(f"Control request completed in {elapsed:.1f}s")
             return self._create_response(result, user_input.language, conversation_id)
         else:
-            _LOGGER.warning(f"Could not parse response: {response_text[:100]}")
+            # Fallback: Versuche den Befehl direkt zu parsen (ohne LLM)
+            _LOGGER.warning(f"LLM response not valid, trying direct parse")
+            direct_result = await self._try_direct_command(user_input.text, controller)
+            
+            if direct_result:
+                return self._create_response(direct_result, user_input.language, conversation_id)
+            
+            _LOGGER.warning(f"Could not parse response: {response_text[:200]}")
             return self._create_response(
-                "Ich konnte den Befehl nicht verstehen.\n\n"
-                "Beispiele:\n"
-                "• 'Schalte das Licht an'\n"
-                "• 'Mache die Küche rot'\n"
-                "• 'Temperaturen in allen Räumen'",
+                f"Ich konnte den Befehl nicht verstehen.\n\n"
+                f"LLM Antwort war kein gültiges JSON.\n\n"
+                f"Beispiele:\n"
+                f"• 'Schalte das Licht an'\n"
+                f"• 'Mache die Küche rot'\n"
+                f"• 'light.wled_tv_mobel auf grün'",
                 user_input.language,
                 conversation_id
             )
+
+    async def _try_direct_command(self, text: str, controller: DeviceController) -> str | None:
+        """Try to parse and execute command directly without LLM."""
+        text_lower = text.lower()
+        
+        controlled = controller.get_controlled_entities(include_sensors=False)
+        
+        # Suche nach Entity-ID im Text
+        entity_id = None
+        for eid in controlled.keys():
+            eid_lower = eid.lower()
+            eid_short = eid.split('.')[-1]
+            
+            if eid_lower in text_lower or eid_short in text_lower.replace('-', '_').replace(' ', '_'):
+                entity_id = eid
+                break
+        
+        # Suche nach Gerätenamen im Text
+        if not entity_id:
+            for eid, info in controlled.items():
+                name_lower = info['name'].lower()
+                # Normalisiere Namen für Vergleich
+                name_normalized = name_lower.replace('-', ' ').replace('_', ' ')
+                text_normalized = text_lower.replace('-', ' ').replace('_', ' ')
+                
+                if name_lower in text_lower or name_normalized in text_normalized:
+                    entity_id = eid
+                    break
+        
+        if not entity_id:
+            return None
+        
+        _LOGGER.info(f"Direct parse found entity: {entity_id}")
+        
+        # Bestimme Service
+        service = "turn_on"
+        if any(word in text_lower for word in ["aus", "off", "ausschalten", "ausmachen"]):
+            service = "turn_off"
+        elif any(word in text_lower for word in ["toggle", "umschalten", "wechseln"]):
+            service = "toggle"
+        
+        # Bestimme Farbe
+        rgb_color = None
+        for color_name, rgb in COLOR_PRESETS.items():
+            if color_name in text_lower:
+                rgb_color = rgb
+                _LOGGER.info(f"Direct parse found color: {color_name} = {rgb}")
+                break
+        
+        # Bestimme Helligkeit
+        brightness_pct = None
+        brightness_match = re.search(r'(\d+)\s*(%|prozent)', text_lower)
+        if brightness_match:
+            brightness_pct = int(brightness_match.group(1))
+            _LOGGER.info(f"Direct parse found brightness: {brightness_pct}%")
+        
+        # Baue Command
+        domain = entity_id.split('.')[0]
+        data = {}
+        
+        if rgb_color:
+            data["rgb_color"] = rgb_color
+        if brightness_pct:
+            data["brightness_pct"] = brightness_pct
+        
+        command = {
+            "action": "control",
+            "domain": domain,
+            "entity_id": entity_id,
+            "service": service,
+            "data": data
+        }
+        
+        _LOGGER.info(f"Direct command: {command}")
+        
+        return await controller.execute_command(str(command))
 
     async def _handle_chat_request(
         self,
