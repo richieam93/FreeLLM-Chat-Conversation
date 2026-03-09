@@ -288,27 +288,31 @@ If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich übe
 
 ### Schritt 1: Agent-ID finden
 
-Die Agent-ID ist die Identifikation deiner FreeLLM Chat Integration.
+Agent-ID finden (für FreeLLM Chat)
+Öffne Entwicklerwerkzeuge → Tab „Dienste"
+Wähle den Dienst: conversation.process
+Klicke oben rechts auf „UI-Modus"
+Bei „Agent" wähle „FreeLLM Chat" aus der Liste
+Klicke oben rechts auf „YAML-Modus"
+Jetzt siehst du:
 
-1. Gehe zu **Entwicklerwerkzeuge → Aktionen**
-2. Wähle die Aktion: `conversation.reload`
-3. Klicke auf **Aktion ausführen**
-4. In der Antwort siehst du deine Agent-ID
-
-Beispiel: `01K7CFMYFHXEJKZ5NTH4KBYM6C`
+agent_id: 01J9ABC123DEF456GHI789
 
 ---
 
 ### Schritt 2: Lautsprecher Device-ID finden
 
-1. Gehe zu **Einstellungen → Geräte & Dienste → Geräte**
-2. Suche deinen Lautsprecher (z.B. "ESP32-S3" oder dein Assist Satellite)
-3. Klicke auf das Gerät
-4. Schaue in die URL deines Browsers:
+Device-ID finden (für dein Assist Satellite)
+Öffne Entwicklerwerkzeuge → Tab „Dienste"
+Wähle den Dienst: assist_satellite.start_conversation
+Klicke oben rechts auf „UI-Modus"
+Bei „Ziel" → „Gerät" wähle dein Satellite aus
+Klicke oben rechts auf „YAML-Modus"
 
-http://deine-ha-ip:8123/config/devices/device/DEINE_DEVICE_ID_HIER
+Jetzt siehst du:
 
-Beispiel: `7bd5d3e50dd0a4005d34c36711ec54da`
+target:
+  device_id: abc123def456ghi789jkl012
 
 ---
 
