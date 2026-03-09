@@ -288,13 +288,11 @@ If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich übe
 
 ### Schritt 1: Agent-ID finden
 
-1. Über Entwicklerwerkzeuge → Dienste
-2. Öffne Entwicklerwerkzeuge (Sidebar links)
-3. Wechsle zum Tab „Dienste"
-4. Wähle im Dropdown den Dienst: conversation.process
-5. Klicke auf „UI-Modus"
-6. Bei „Agent" wähle aus der Liste „FreeLLM Chat" aus
-7. Klicke auf „YAML-Modus"
+1. Über Entwicklerwerkzeuge → Aktionen
+2. Wähle im Dropdown den Dienst: conversation.process
+3. Klicke auf „UI-Modus"
+4. Bei „Agent" wähle aus der Liste „FreeLLM Chat" aus
+5. Klicke auf „YAML-Modus"
 
 Jetzt siehst du:
 
@@ -308,13 +306,11 @@ Kopiere die Agent-ID (die lange Zeichenfolge)
 
 📡 Device-ID finden (für dein Assist Satellite)
 
-1. Über Entwicklerwerkzeuge → Dienste
-2. Öffne Entwicklerwerkzeuge (Sidebar links)
-3. Wechsle zum Tab „Dienste"
-4. Wähle im Dropdown den Dienst: assist_satellite.start_conversation
-5. Klicke auf „UI-Modus"
-6. Bei „Ziel" → „Gerät" wähle dein Satellite aus der Liste aus
-7. Klicke auf „YAML-Modus"
+1. Über Entwicklerwerkzeuge → Aktionen
+2. Wähle im Dropdown den Dienst: assist_satellite.start_conversation
+3. Klicke auf „UI-Modus"
+4. Bei „Ziel" → „Gerät" wähle dein Satellite aus der Liste aus
+5. Klicke auf „YAML-Modus"
 
 Jetzt siehst du:
 
