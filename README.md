@@ -288,17 +288,18 @@ If it helps you, I'd appreciate a coffee. Wenn es dir hilft, freue ich mich übe
 
 ### Schritt 1: Agent-ID finden
 
-Über Entwicklerwerkzeuge → Dienste
-Öffne Entwicklerwerkzeuge (Sidebar links)
-Wechsle zum Tab „Dienste"
-Wähle im Dropdown den Dienst: conversation.process
-Klicke oben rechts auf „UI-Modus"
-Bei „Agent" wähle aus der Liste „FreeLLM Chat" aus
-Klicke oben rechts auf „YAML-Modus"
+1. Über Entwicklerwerkzeuge → Dienste
+2. Öffne Entwicklerwerkzeuge (Sidebar links)
+3. Wechsle zum Tab „Dienste"
+4. Wähle im Dropdown den Dienst: conversation.process
+5. Klicke auf „UI-Modus"
+6. Bei „Agent" wähle aus der Liste „FreeLLM Chat" aus
+7. Klicke auf „YAML-Modus"
+
 Jetzt siehst du:
-YAML
 
 agent_id: 01J9ABC123DEF456GHI789
+
 Kopiere die Agent-ID (die lange Zeichenfolge)
 
 ---
@@ -306,15 +307,16 @@ Kopiere die Agent-ID (die lange Zeichenfolge)
 ### Schritt 2: Lautsprecher Device-ID finden
 
 📡 Device-ID finden (für dein Assist Satellite)
-Über Entwicklerwerkzeuge → Dienste
-Öffne Entwicklerwerkzeuge (Sidebar links)
-Wechsle zum Tab „Dienste"
-Wähle im Dropdown den Dienst: assist_satellite.start_conversation
-Klicke oben rechts auf „UI-Modus"
-Bei „Ziel" → „Gerät" wähle dein Satellite aus der Liste aus
-Klicke oben rechts auf „YAML-Modus"
-Jetzt siehst du:
 
+1. Über Entwicklerwerkzeuge → Dienste
+2. Öffne Entwicklerwerkzeuge (Sidebar links)
+3. Wechsle zum Tab „Dienste"
+4. Wähle im Dropdown den Dienst: assist_satellite.start_conversation
+5. Klicke auf „UI-Modus"
+6. Bei „Ziel" → „Gerät" wähle dein Satellite aus der Liste aus
+7. Klicke auf „YAML-Modus"
+
+Jetzt siehst du:
 
 target:
   device_id: abc123def456ghi789jkl012
