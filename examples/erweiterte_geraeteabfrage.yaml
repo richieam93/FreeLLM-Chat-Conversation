@@ -1,0 +1,36 @@
+alias: "FreeLLM - Erweiterte Geräteabfrage"
+description: >-
+  Führt eine ausschließlich lesende Abfrage über die für Assist freigegebenen
+  Entitäten aus. Beispiele: eingeschaltete Lichter, nicht erreichbare Geräte,
+  Batterien unter einem Grenzwert, Raumübersichten oder kürzlich geänderte Zustände.
+mode: queued
+max: 10
+fields:
+  agent_id:
+    name: Konversationsagent
+    description: FreeLLM-Konversationsentität auswählen.
+    required: true
+    selector:
+      conversation_agent:
+  frage:
+    name: Geräteabfrage
+    description: >-
+      Natürlich formulierte Statusfrage. Die Vorlage weist FreeLLM zusätzlich an,
+      keine Geräte zu verändern.
+    required: true
+    example: "Welche Batteriesensoren liegen unter 20 Prozent?"
+    selector:
+      text:
+        multiline: true
+sequence:
+  - action: conversation.process
+    data:
+      agent_id: "{{ agent_id }}"
+      text: >-
+        Reine Geräte- und Zustandsabfrage: {{ frage }}
+        Verwende nur für Assist freigegebene Entitäten. Verändere keine Geräte,
+        Szenen, Helfer oder Einstellungen. Nenne bei mehreren Treffern den Raum,
+        unterscheide unbekannt von nicht erreichbar und erfinde keine Werte.
+    response_variable: freellm_response
+  - stop: "FreeLLM-Abfrageergebnis zurückgeben"
+    response_variable: freellm_response

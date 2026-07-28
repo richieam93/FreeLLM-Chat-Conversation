@@ -1,0 +1,55 @@
+MIT License
+
+Copyright (c) 2026 richieam93
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+-------------------------------------------------------------------------------
+THIRD-PARTY SERVICE NOTICE AND DISCLAIMER
+Informational notice only - this section does not modify the MIT License above.
+-------------------------------------------------------------------------------
+
+This Software is an independent Home Assistant integration that communicates
+with the external LLM7.io service (https://llm7.io/) and its OpenAI-compatible
+API at https://api.llm7.io/. LLM7.io is not
+included in, operated by, or controlled by richieam93. This project is not
+sponsored, endorsed, or officially affiliated with LLM7.io unless explicitly
+stated otherwise by the respective parties.
+
+LLM7.io, its service name, model names, provider names, trademarks, logos, and
+other third-party materials remain the property of their respective owners.
+This Software does not grant any rights to those third-party materials.
+
+Large language model responses may be inaccurate, incomplete, misleading, or
+fabricated ("hallucinations"). Do not rely on generated output for legal,
+medical, financial, emergency, security-critical, or other professional advice.
+Independently verify important information and device states.
+
+The external service is provided separately and may be changed, restricted,
+interrupted, priced, suspended, or discontinued at any time. Available models,
+features, quotas, prices, rate limits, privacy practices, and terms may change
+without notice. The Software cannot guarantee availability, accuracy, latency,
+model identity, quota information, or continued free access.
+
+To the maximum extent permitted by applicable law, richieam93 is not liable for
+direct or indirect loss, device actions, property damage, data loss, service
+interruptions, costs, or other consequences caused by or related to use of the
+Software, generated content, Home Assistant automations, or the external
+service. Nothing in this notice excludes liability that cannot legally be
+excluded or limited.

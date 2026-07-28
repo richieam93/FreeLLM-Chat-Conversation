@@ -1,0 +1,25 @@
+alias: "FreeLLM - Antwort mit Sprachausgabe"
+description: >-
+  Sendet eine Frage oder Statusabfrage an FreeLLM und spricht die Antwort über
+  eine auswählbare TTS- und Media-Player-Entität. Platzhalter vor Verwendung
+  ersetzen. Für Statusabfragen wird ausdrücklich keine Geräteänderung verlangt.
+mode: single
+triggers: []
+conditions: []
+actions:
+  - action: conversation.process
+    data:
+      agent_id: conversation.DEINE_FREELLM_ENTITAET
+      text: >-
+        Gib mir eine kurze Zusammenfassung des Hauses. Prüfe nur die für Assist
+        freigegebenen Zustände und verändere keine Geräte.
+    response_variable: freellm_response
+
+  - action: tts.speak
+    target:
+      entity_id: tts.DEINE_TTS_ENTITAET
+    data:
+      media_player_entity_id: media_player.DEIN_LAUTSPRECHER
+      message: >-
+        {{ freellm_response.response.speech.plain.speech
+           | default('FreeLLM hat keine Textantwort geliefert.', true) }}

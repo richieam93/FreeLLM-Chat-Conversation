@@ -1,0 +1,217 @@
+{
+  "title": "FreeLLM Chat Conversation",
+  "config": {
+    "error": {
+      "invalid_auth": "The API token was rejected. The field may be left empty.",
+      "cannot_connect": "Could not connect to LLM7.io.",
+      "unknown": "Unknown error while loading models.",
+      "model_unavailable": "This model is no longer available.",
+      "disclaimer_required": "You must acknowledge the external-service and AI disclaimer to continue."
+    },
+    "abort": {
+      "reconfigure_successful": "The API settings were updated."
+    },
+    "step": {
+      "user": {
+        "title": "Set up FreeLLM Chat",
+        "description": "FreeLLM Chat uses the external [LLM7.io service]({website_url}). The API token is optional. Without a token, anonymous chat access is available with at least three models and, depending on the live catalog, possibly more. Create a [free API key]({api_key_url}) for higher published limits and read the [provider documentation]({docs_url}). The currently published reference values are 500,000 tokens per 24 hours and 60 requests per hour anonymously, or 1,000,000 tokens per 24 hours and 250 requests per hour with a free key. These values can change; check [service status]({status_url}).\n\n**Important:** AI responses may be inaccurate. Do not rely on them for legal, medical, financial, emergency, or safety-critical decisions. LLM7.io can change models, features, prices, and limits without notice. The service and this integration are provided as is.",
+        "data": {
+          "api_key": "API token (optional)",
+          "accept_disclaimer": "I understand and accept the disclaimer"
+        },
+        "data_description": {
+          "api_key": "Leave empty for anonymous access, or paste a key created in the LLM7.io dashboard.",
+          "accept_disclaimer": "Required to confirm that LLM7.io is an independent external service and model output may be wrong."
+        }
+      },
+      "model": {
+        "title": "Choose the initial model",
+        "description": "The loaded catalog currently contains **{free_model_count} models marked as usable without usage billing**. Access mode: **{access_mode}**. The live catalog is authoritative and may change. You can switch models later on the FreeLLM device. Device control uses function calling, which LLM7.io currently documents as a paid feature.",
+        "data": {
+          "chat_model": "Chat model"
+        }
+      },
+      "reconfigure": {
+        "title": "Change API access",
+        "description": "Add, replace, or remove the token. Create or manage a key in the [LLM7.io dashboard]({api_key_url}). Anonymous chat remains available when supported by the current catalog.",
+        "data": {
+          "api_key": "API token (optional)"
+        }
+      }
+    }
+  },
+  "options": {
+    "error": {
+      "model_unavailable": "This model is unavailable or incompatible with enabled device control."
+    },
+    "step": {
+      "init": {
+        "title": "FreeLLM Chat settings",
+        "menu_options": {
+          "chat_settings": "Chat, context, and output",
+          "model_settings": "Models and fallback",
+          "control_settings": "Home Assistant control",
+          "usage_settings": "Usage and reference limits"
+        }
+      },
+      "chat_settings": {
+        "title": "Chat, context, and output",
+        "description": "Configure the model, response behavior, streaming, image input, and history.",
+        "data": {
+          "chat_model": "Chat model",
+          "temperature": "Creativity",
+          "max_tokens": "Maximum response length",
+          "history_limit": "Maximum history messages",
+          "max_tool_iterations": "Maximum tool rounds",
+          "enable_streaming": "Stream responses live",
+          "enable_vision": "Allow image input",
+          "timeout": "Timeout in seconds",
+          "retry_count": "Retry attempts",
+          "prompt": "System instructions"
+        },
+        "data_description": {
+          "temperature": "Lower is more precise; higher is more creative.",
+          "max_tokens": "Maximum output tokens per model response.",
+          "history_limit": "Limits old messages while retaining complete turns and the system prompt.",
+          "max_tool_iterations": "Limits consecutive tool rounds. Duplicate and excessive device actions are also blocked automatically.",
+          "enable_streaming": "Shows text while it is generated when the model supports streaming.",
+          "enable_vision": "Allows JPEG, PNG, WebP, and GIF images from the latest user message. A vision-capable fallback is selected when required.",
+          "retry_count": "Only connection, rate-limit, and temporary server failures are retried.",
+          "prompt": "May contain Home Assistant templates. Device actions are additionally validated by Home Assistant."
+        }
+      },
+      "model_settings": {
+        "title": "Models and fallback",
+        "description": "Filter models, choose a preferred fallback, and control catalog updates.",
+        "data": {
+          "only_free_models": "Show token-free models only",
+          "fallback_model": "Preferred fallback model",
+          "auto_update_models": "Update models automatically",
+          "model_refresh_interval": "Update interval"
+        },
+        "data_description": {
+          "only_free_models": "Always applies when no API token is configured. With a token, it hides usage-based models.",
+          "fallback_model": "Used when the active model disappears or lacks a required capability.",
+          "auto_update_models": "Regularly reloads the catalog and automatically corrects invalid selections.",
+          "model_refresh_interval": "Hours between automatic updates."
+        }
+      },
+      "control_settings": {
+        "title": "Home Assistant control and device queries",
+        "description": "Home Assistant official LLM tools perform actions. Additional read-only FreeLLM tools improve queries for devices, rooms, floors, states, numeric values, and unavailable entities. Only entities exposed to Assist are included. LLM7.io may restrict function calling depending on access mode.",
+        "data": {
+          "enable_device_control": "Use device actions and states",
+          "llm_hass_api": "Home Assistant LLM APIs",
+          "enable_extended_device_queries": "Enable extended read-only device queries",
+          "device_query_max_results": "Maximum results per device query"
+        },
+        "data_description": {
+          "enable_device_control": "Allows Home Assistant official actions, state queries, and follow-up actions. Only entities exposed to Assist are available.",
+          "llm_hass_api": "Assist is normally the right choice. Without a valid API, device actions and extended queries are disabled.",
+          "enable_extended_device_queries": "Adds accurate name search, area and floor summaries, and filters by domain, device class, state, availability, numeric value, and recent changes. These extra tools never change devices.",
+          "device_query_max_results": "Limits the size of one query result. Smaller values save tokens; larger values help with large areas."
+        }
+      },
+      "usage_settings": {
+        "title": "Usage and reference limits",
+        "description": "Configure the local warning thresholds. Use 0 to automatically apply the access-mode reference values published on the LLM7.io main website. Provider pages can temporarily show different values, so these fields can be adjusted without a code update.",
+        "data": {
+          "reference_token_limit_24h": "Token reference limit per 24 hours",
+          "reference_request_limit_hour": "Request reference limit per hour",
+          "reference_request_limit_minute": "Request reference limit per minute",
+          "reference_request_limit_second": "Request reference limit per second"
+        },
+        "data_description": {
+          "reference_token_limit_24h": "0 = automatic. Used only for the local estimate; it does not change the provider account.",
+          "reference_request_limit_hour": "0 = automatic. Locally observed completed API attempts are counted.",
+          "reference_request_limit_minute": "0 = automatic. Locally observed completed API attempts are counted.",
+          "reference_request_limit_second": "0 = automatic. Locally observed completed API attempts are counted."
+        }
+      }
+    }
+  },
+  "entity": {
+    "button": {
+      "refresh_models": {
+        "name": "Refresh models"
+      },
+      "select_default_model": {
+        "name": "Select default model"
+      },
+      "reset_usage_statistics": {
+        "name": "Reset local usage statistics"
+      }
+    },
+    "select": {
+      "chat_model": {
+        "name": "Chat model"
+      }
+    },
+    "sensor": {
+      "catalog_status": {
+        "name": "Model catalog status",
+        "state": {
+          "live": "Live",
+          "cache": "Cache",
+          "stale_cache": "Stale cache",
+          "bundled": "Emergency catalog"
+        }
+      },
+      "available_models": {
+        "name": "Available models"
+      },
+      "conversation_requests": {
+        "name": "Conversation requests"
+      },
+      "api_requests": {
+        "name": "API requests"
+      },
+      "token_usage": {
+        "name": "Token usage"
+      },
+      "quota_status": {
+        "name": "Local quota estimate",
+        "state": {
+          "ok": "OK",
+          "warning": "Warning",
+          "limit_reached": "Reference limit reached"
+        }
+      },
+      "last_api_request": {
+        "name": "Last API request"
+      }
+    }
+  },
+  "services": {
+    "refresh_models": {
+      "name": "Refresh models",
+      "description": "Load the latest LLM7.io model catalogue and correct invalid model selections.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Configuration",
+          "description": "Optional FreeLLM configuration to update."
+        }
+      }
+    },
+    "select_default_model": {
+      "name": "Select default model",
+      "description": "Select the preferred or automatically determined fallback model.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Configuration",
+          "description": "Optional FreeLLM configuration whose default model should be selected."
+        }
+      }
+    },
+    "reset_usage_statistics": {
+      "name": "Reset local usage statistics",
+      "description": "Delete only request and token counters stored locally in Home Assistant. Provider account data is not changed.",
+      "fields": {
+        "config_entry_id": {
+          "name": "Configuration",
+          "description": "Optional FreeLLM configuration whose local statistics should be reset."
+        }
+      }
+    }
+  }
+}

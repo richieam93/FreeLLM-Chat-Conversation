@@ -1,0 +1,73 @@
+alias: "FreeLLM - Lichter und Geräte testen"
+description: >-
+  Testet die zuverlässige Licht- und Geräteauflösung mit einer lesenden Liste,
+  einem exakt benannten Licht oder allen Lichtern eines Bereichs.
+mode: queued
+max: 10
+fields:
+  agent_id:
+    name: Konversationsagent
+    description: FreeLLM-Konversationsentität auswählen.
+    required: true
+    selector:
+      conversation_agent:
+  test:
+    name: Test
+    required: true
+    default: list_lights
+    selector:
+      select:
+        options:
+          - label: "Alle Lichter auflisten"
+            value: list_lights
+          - label: "Benanntes Licht einschalten"
+            value: named_light_on
+          - label: "Benanntes Licht ausschalten"
+            value: named_light_off
+          - label: "Alle Lichter eines Bereichs einschalten"
+            value: area_lights_on
+          - label: "Alle Lichter eines Bereichs ausschalten"
+            value: area_lights_off
+          - label: "Gerätezustand abfragen"
+            value: device_state
+  geraetename:
+    name: Geräte- oder Lichtname
+    description: >-
+      Exakter Anzeigename, Alias oder Entity-ID, zum Beispiel wled_küche.
+      Für Bereichstests darf das Feld leer bleiben.
+    required: false
+    selector:
+      text:
+  bereich:
+    name: Bereich
+    description: Home-Assistant-Bereich, zum Beispiel Küche.
+    required: false
+    selector:
+      area:
+sequence:
+  - variables:
+      test_text: >-
+        {% if test == 'list_lights' %}
+          Liste alle für Assist freigegebenen Lichter auf. Nenne Name, Bereich,
+          Zustand und Erreichbarkeit. Verändere nichts.
+        {% elif test == 'named_light_on' %}
+          Schalte genau das Licht {{ geraetename }} ein. Verwende den exakten Namen
+          oder die Entity-ID und verändere keine anderen Geräte.
+        {% elif test == 'named_light_off' %}
+          Schalte genau das Licht {{ geraetename }} aus. Verwende den exakten Namen
+          oder die Entity-ID und verändere keine anderen Geräte.
+        {% elif test == 'area_lights_on' %}
+          Schalte alle für Assist freigegebenen Lichter im Bereich {{ area_name(bereich) }} ein.
+        {% elif test == 'area_lights_off' %}
+          Schalte alle für Assist freigegebenen Lichter im Bereich {{ area_name(bereich) }} aus.
+        {% else %}
+          Wie ist der aktuelle Zustand von {{ geraetename }}? Verändere nichts und
+          frage nach, falls mehrere Geräte gleich gut passen.
+        {% endif %}
+  - action: conversation.process
+    data:
+      agent_id: "{{ agent_id }}"
+      text: "{{ test_text }}"
+    response_variable: freellm_response
+  - stop: "FreeLLM-Testantwort zurückgeben"
+    response_variable: freellm_response

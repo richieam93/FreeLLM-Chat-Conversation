@@ -1,0 +1,26 @@
+alias: "FreeLLM - Chat oder Gerätebefehl"
+description: "Sendet einen frei wählbaren Text an den ausgewählten FreeLLM-Konversationsagenten."
+mode: queued
+max: 10
+fields:
+  agent_id:
+    name: Konversationsagent
+    description: FreeLLM-Konversationsentität auswählen.
+    required: true
+    selector:
+      conversation_agent:
+  text:
+    name: Text
+    description: Frage, Statusabfrage oder eindeutiger Gerätebefehl.
+    required: true
+    selector:
+      text:
+        multiline: true
+sequence:
+  - action: conversation.process
+    data:
+      agent_id: "{{ agent_id }}"
+      text: "{{ text }}"
+    response_variable: freellm_response
+  - stop: "FreeLLM-Antwort zurückgeben"
+    response_variable: freellm_response

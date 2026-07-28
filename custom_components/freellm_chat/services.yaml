@@ -1,0 +1,35 @@
+refresh_models:
+  name: Modelle aktualisieren
+  description: Lädt den aktuellen Modellkatalog von LLM7.io und korrigiert bei Bedarf die Modellauswahl.
+  fields:
+    config_entry_id:
+      name: Konfiguration
+      description: Optional. Die FreeLLM-Konfiguration, deren Modelle aktualisiert werden sollen.
+      required: false
+      selector:
+        config_entry:
+          integration: freellm_chat
+
+select_default_model:
+  name: Standardmodell auswählen
+  description: Wählt das bevorzugte oder automatisch ermittelte Ersatzmodell aus.
+  fields:
+    config_entry_id:
+      name: Konfiguration
+      description: Optional. Die FreeLLM-Konfiguration, deren Standardmodell ausgewählt werden soll.
+      required: false
+      selector:
+        config_entry:
+          integration: freellm_chat
+
+reset_usage_statistics:
+  name: Lokale Nutzungsstatistik zurücksetzen
+  description: Löscht ausschließlich die lokal in Home Assistant gespeicherten Anfrage- und Tokenzähler. Daten im LLM7.io-Konto werden dadurch nicht verändert.
+  fields:
+    config_entry_id:
+      name: Konfiguration
+      description: Optional. Die FreeLLM-Konfiguration, deren lokale Statistik zurückgesetzt werden soll.
+      required: false
+      selector:
+        config_entry:
+          integration: freellm_chat

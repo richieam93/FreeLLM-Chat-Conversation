@@ -1,0 +1,9 @@
+alias: "FreeLLM - Modelle täglich aktualisieren"
+description: "Lädt den aktuellen LLM7-Modellkatalog einmal täglich neu."
+triggers:
+  - trigger: time
+    at: "03:30:00"
+conditions: []
+actions:
+  - action: freellm_chat.refresh_models
+mode: single

@@ -1,0 +1,72 @@
+[
+  {
+    "id": "gpt-oss:20b",
+    "model_type": "chat",
+    "schema_endpoints": ["openai"],
+    "tier": "turbo",
+    "usage_based_only": false,
+    "stream": true,
+    "json_mode": true,
+    "reasoning": false,
+    "tools_calling": true,
+    "modalities": {"input": ["text"], "output": ["text"]},
+    "context_window": {"tokens": 128000},
+    "capabilities": {"tools": true, "stream": true, "json_mode": true}
+  },
+  {
+    "id": "grok-3-mini",
+    "model_type": "chat",
+    "schema_endpoints": ["openai"],
+    "tier": "turbo",
+    "usage_based_only": false,
+    "stream": true,
+    "json_mode": true,
+    "reasoning": false,
+    "tools_calling": true,
+    "modalities": {"input": ["text"], "output": ["text"]},
+    "context_window": {},
+    "capabilities": {"tools": true, "stream": true, "json_mode": true}
+  },
+  {
+    "id": "gemini-3.1-flash-lite",
+    "model_type": "chat",
+    "schema_endpoints": ["openai"],
+    "tier": "turbo",
+    "usage_based_only": false,
+    "stream": true,
+    "json_mode": false,
+    "reasoning": false,
+    "tools_calling": true,
+    "modalities": {"input": ["text", "image"], "output": ["text"]},
+    "context_window": {},
+    "capabilities": {"vision": true, "tools": true, "stream": true}
+  },
+  {
+    "id": "minimax-m2.7",
+    "model_type": "chat",
+    "schema_endpoints": ["openai"],
+    "tier": "turbo",
+    "usage_based_only": false,
+    "stream": false,
+    "json_mode": true,
+    "reasoning": true,
+    "tools_calling": true,
+    "modalities": {"input": ["text"], "output": ["text"]},
+    "context_window": {"tokens": 180000},
+    "capabilities": {"tools": true, "stream": false, "reasoning": true, "json_mode": true}
+  },
+  {
+    "id": "codestral-latest",
+    "model_type": "chat",
+    "schema_endpoints": ["openai"],
+    "tier": "turbo",
+    "usage_based_only": false,
+    "stream": true,
+    "json_mode": true,
+    "reasoning": false,
+    "tools_calling": true,
+    "modalities": {"input": ["text"], "output": ["text"]},
+    "context_window": {"tokens": 32000},
+    "capabilities": {"tools": true, "stream": true, "json_mode": true}
+  }
+]

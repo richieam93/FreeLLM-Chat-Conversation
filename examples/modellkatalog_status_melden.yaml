@@ -1,0 +1,23 @@
+alias: "FreeLLM - Modellkatalogproblem melden"
+description: "Sendet eine Meldung, wenn der Modellkatalog nur noch aus einem veralteten Cache oder Offline-Katalog stammt."
+triggers:
+  - trigger: state
+    entity_id: sensor.DEIN_FREELLM_MODELLKATALOG_STATUS
+    to: "stale_cache"
+    for: "00:15:00"
+  - trigger: state
+    entity_id: sensor.DEIN_FREELLM_MODELLKATALOG_STATUS
+    to: "bundled"
+    for: "00:15:00"
+conditions: []
+actions:
+  - action: notify.send_message
+    target:
+      entity_id: notify.DEIN_BENACHRICHTIGUNGSDIENST
+    data:
+      title: "FreeLLM Modellkatalog"
+      message: >-
+        Der FreeLLM-Modellkatalog verwendet aktuell den Status
+        {{ states('sensor.DEIN_FREELLM_MODELLKATALOG_STATUS') }}.
+        Prüfe die Verbindung zu api.llm7.io.
+mode: single

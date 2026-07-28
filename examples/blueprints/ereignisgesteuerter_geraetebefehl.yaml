@@ -1,0 +1,50 @@
+blueprint:
+  name: "FreeLLM - Ereignisgesteuerter Gerätebefehl"
+  description: >-
+    Sendet beim Erreichen eines festgelegten Entitätszustands einen eindeutigen
+    natürlichsprachigen Befehl an FreeLLM. Nur für nicht sicherheitskritische
+    Abläufe verwenden. Alle betroffenen Entitäten müssen für Assist freigegeben
+    sein.
+  domain: automation
+  author: richieam93
+  homeassistant:
+    min_version: 2025.12.0
+  input:
+    trigger_entity:
+      name: Auslösende Entität
+      description: Entität, deren Zustand überwacht wird.
+      selector:
+        entity:
+    target_state:
+      name: Zielzustand
+      description: Zustand, bei dem der Befehl ausgeführt wird, zum Beispiel on.
+      selector:
+        text:
+    conversation_agent:
+      name: FreeLLM-Konversationsagent
+      selector:
+        conversation_agent:
+    command:
+      name: Gerätebefehl
+      description: >-
+        Eindeutiger Befehl, zum Beispiel: Schalte die Lampe im Flur ein und
+        stelle sie auf 30 Prozent.
+      selector:
+        text:
+          multiline: true
+
+triggers:
+  - trigger: state
+    entity_id: !input trigger_entity
+    to: !input target_state
+
+conditions: []
+
+actions:
+  - action: conversation.process
+    data:
+      agent_id: !input conversation_agent
+      text: !input command
+    response_variable: freellm_response
+
+mode: single

@@ -1,0 +1,42 @@
+blueprint:
+  name: "FreeLLM - Zeitgesteuerter Gerätebefehl"
+  description: >-
+    Sendet zu einer festgelegten Uhrzeit einen natürlichsprachigen Befehl an
+    einen Konversationsagenten. Nur für nicht sicherheitskritische Routinen
+    verwenden und alle betroffenen Entitäten vorher für Assist freigeben.
+  domain: automation
+  author: richieam93
+  homeassistant:
+    min_version: 2025.12.0
+  input:
+    conversation_agent:
+      name: FreeLLM-Konversationsagent
+      selector:
+        conversation_agent:
+    execution_time:
+      name: Ausführungszeit
+      selector:
+        time:
+    command:
+      name: Gerätebefehl
+      description: >-
+        Ein eindeutiger Befehl, zum Beispiel: Schalte im Erdgeschoss alle
+        Lampen aus und stelle die Heizung im Wohnzimmer auf 19 Grad.
+      selector:
+        text:
+          multiline: true
+
+triggers:
+  - trigger: time
+    at: !input execution_time
+
+conditions: []
+
+actions:
+  - action: conversation.process
+    data:
+      agent_id: !input conversation_agent
+      text: !input command
+    response_variable: freellm_response
+
+mode: single

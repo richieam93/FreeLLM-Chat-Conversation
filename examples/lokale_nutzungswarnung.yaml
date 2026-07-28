@@ -1,0 +1,30 @@
+alias: FreeLLM lokale Nutzungswarnung
+id: freellm_lokale_nutzungswarnung
+description: >-
+  Erstellt eine Home-Assistant-Benachrichtigung, wenn die lokal geschätzte
+  Nutzung den Status warning oder limit_reached erreicht. Der Sensor ist kein
+  offizieller LLM7.io-Kontostand.
+triggers:
+  - trigger: state
+    entity_id: sensor.DEIN_FREELLM_LIMITSTATUS
+conditions:
+  - condition: template
+    value_template: >-
+      {{ trigger.to_state is not none and
+         trigger.to_state.state in ['warning', 'limit_reached'] and
+         (trigger.from_state is none or
+          trigger.to_state.state != trigger.from_state.state) }}
+actions:
+  - action: persistent_notification.create
+    data:
+      notification_id: freellm_lokale_nutzungswarnung
+      title: FreeLLM Nutzungswarnung
+      message: >-
+        Lokaler Status: {{ trigger.to_state.state }}.
+        Tokens der letzten 24 Stunden:
+        {{ state_attr('sensor.DEIN_FREELLM_TOKENVERBRAUCH', 'tokens_24h') | default('unbekannt', true) }}.
+        API-Anfragen der letzten Stunde:
+        {{ state_attr('sensor.DEINE_FREELLM_API_ANFRAGEN', 'requests_hour') | default('unbekannt', true) }}.
+        Diese Werte werden nur lokal gezählt und können vom echten
+        Anbieterlimit abweichen. Prüfe bei Bedarf https://dash.llm7.io/.
+mode: single
