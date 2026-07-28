@@ -384,10 +384,8 @@ Dies ist keine Rechtsberatung. Es gelten zusätzlich die aktuellen Bedingungen v
 
 - Integrationscode und Dokumentation: Copyright 2026 **richieam93**.
 - Lizenz: MIT, siehe `LICENSE`.
-- Zusätzliche Anbieter- und Haftungshinweise: `NOTICE.md` und der Anhang in `LICENSE`.
+- Zusätzliche Anbieter- und Haftungshinweise:  Anhang in `LICENSE`.
 - LLM7.io, Home Assistant und andere Produktnamen oder Marken gehören ihren jeweiligen Rechteinhabern.
-- Es wird keine Partnerschaft, Unterstützung, Zertifizierung oder offizielle Verbindung behauptet.
-- Ein GitHub-Stern, eine Reaktion oder ein Kommentar ist eine freundliche Rückmeldung, aber keine formelle Lizenzübertragung oder Genehmigung.
 - Dieses Projekt enthält keinen kopierten LLM7.io-Servercode und verwendet nur die öffentlich erreichbare API-Schnittstelle.
 
 ## Aktualisierung auf 3.5.0
@@ -851,10 +849,8 @@ This is not legal advice. The current terms of LLM7.io and Home Assistant also a
 
 - Integration code and documentation: Copyright 2026 **richieam93**.
 - License: MIT; see `LICENSE`.
-- Additional provider and liability notice: `NOTICE.md` and the appendix in `LICENSE`.
+- Additional provider and liability notice:  in `LICENSE`.
 - LLM7.io, Home Assistant, and other product names or trademarks belong to their respective owners.
-- No partnership, endorsement, certification, or official affiliation is claimed.
-- A GitHub star, reaction, or comment is friendly feedback, not a formal licence transfer or permission grant.
 - This project contains no copied LLM7.io server code and communicates only through the publicly reachable API.
 
 ## Updating to 3.5.0
