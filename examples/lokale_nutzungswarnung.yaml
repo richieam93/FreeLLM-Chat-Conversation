@@ -3,7 +3,7 @@ id: freellm_lokale_nutzungswarnung
 description: >-
   Erstellt eine Home-Assistant-Benachrichtigung, wenn die lokal geschätzte
   Nutzung den Status warning oder limit_reached erreicht. Der Sensor ist kein
-  offizieller LLM7.io-Kontostand.
+  offizieller Provider-Kontostand.
 triggers:
   - trigger: state
     entity_id: sensor.DEIN_FREELLM_LIMITSTATUS

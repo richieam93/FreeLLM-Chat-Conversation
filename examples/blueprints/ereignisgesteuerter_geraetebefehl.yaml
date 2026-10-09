@@ -8,7 +8,7 @@ blueprint:
   domain: automation
   author: richieam93
   homeassistant:
-    min_version: 2025.12.0
+    min_version: 2026.9.0
   input:
     trigger_entity:
       name: Auslösende Entität

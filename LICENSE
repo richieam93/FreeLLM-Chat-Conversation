@@ -25,31 +25,38 @@ THIRD-PARTY SERVICE NOTICE AND DISCLAIMER
 Informational notice only - this section does not modify the MIT License above.
 -------------------------------------------------------------------------------
 
-This Software is an independent Home Assistant integration that communicates
-with the external LLM7.io service (https://llm7.io/) and its OpenAI-compatible
-API at https://api.llm7.io/. LLM7.io is not
-included in, operated by, or controlled by richieam93. This project is not
-sponsored, endorsed, or officially affiliated with LLM7.io unless explicitly
-stated otherwise by the respective parties.
+This Software is an independent Home Assistant integration that can communicate
+with external AI services including LLM7.io (https://llm7.io/) and OVHcloud AI
+Endpoints (https://www.ovhcloud.com/en/public-cloud/ai-endpoints/) through
+OpenAI-compatible APIs. Those services are not included in, operated by, or
+controlled by richieam93. This project is not sponsored, endorsed, or officially
+affiliated with LLM7.io, OVHcloud, or Home Assistant unless explicitly stated
+otherwise by the respective parties.
 
-LLM7.io, its service name, model names, provider names, trademarks, logos, and
-other third-party materials remain the property of their respective owners.
-This Software does not grant any rights to those third-party materials.
+LLM7.io, OVHcloud, Home Assistant, model names, provider names, trademarks,
+logos, and other third-party materials remain the property of their respective
+owners. This Software does not grant rights to those third-party materials.
+
+Depending on configuration, user text, limited conversation context, tool
+schemas and results, Assist-exposed entity information, and images can be sent
+to the selected external provider. Provider credentials are supplied by the
+user and are subject to the provider's terms. The inactive provider credential
+is not intended to be sent to the active provider.
 
 Large language model responses may be inaccurate, incomplete, misleading, or
 fabricated ("hallucinations"). Do not rely on generated output for legal,
 medical, financial, emergency, security-critical, or other professional advice.
 Independently verify important information and device states.
 
-The external service is provided separately and may be changed, restricted,
+External services are provided separately and may be changed, restricted,
 interrupted, priced, suspended, or discontinued at any time. Available models,
 features, quotas, prices, rate limits, privacy practices, and terms may change
 without notice. The Software cannot guarantee availability, accuracy, latency,
-model identity, quota information, or continued free access.
+model identity, quota information, or continued free/anonymized access.
 
 To the maximum extent permitted by applicable law, richieam93 is not liable for
 direct or indirect loss, device actions, property damage, data loss, service
 interruptions, costs, or other consequences caused by or related to use of the
-Software, generated content, Home Assistant automations, or the external
-service. Nothing in this notice excludes liability that cannot legally be
-excluded or limited.
+Software, generated content, Home Assistant automations, or external services.
+Nothing in this notice excludes liability that cannot legally be excluded or
+limited.

@@ -29,7 +29,7 @@ Vor der Verwendung:
 
 Für `erweiterte_geraeteabfrage.yaml` müssen die erweiterten Geräteabfragen in den Integrationsoptionen aktiviert sein. Die Abfrage berücksichtigt ausschließlich für Assist freigegebene Entitäten.
 
-Die Nutzungswerte sind lokale Schätzungen und kein offizieller LLM7.io-Kontostand. Ersetze auch die Platzhalter der neuen Nutzungswarnung durch die tatsächlichen Sensor-Entitäten.
+Die Nutzungswerte sind lokale Schätzungen und kein offizieller Provider-Kontostand. Ersetze auch die Platzhalter der neuen Nutzungswarnung durch die tatsächlichen Sensor-Entitäten.
 
 Die YAML-Dateien sind Vorlagen. Automationen können im YAML-Editor eingefügt oder in die eigene Paketstruktur übernommen werden. Blueprints nach `/config/blueprints/automation/richieam93/` kopieren und anschließend die Automationen neu laden.
 
@@ -60,6 +60,6 @@ Before use:
 
 For `erweiterte_geraeteabfrage.yaml`, extended device queries must be enabled in the integration options. Queries include only entities exposed to Assist.
 
-Usage values are local estimates, not an official LLM7.io account balance. Replace the usage-warning placeholders with the actual sensor entities as well.
+Usage values are local estimates, not an official provider account balance. Replace the usage-warning placeholders with the actual sensor entities as well.
 
 The YAML files are templates. Automations can be pasted into the YAML editor or added to your own package structure. Copy blueprints to `/config/blueprints/automation/richieam93/` and reload automations afterward.

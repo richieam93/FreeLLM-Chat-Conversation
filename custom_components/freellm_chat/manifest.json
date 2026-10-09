@@ -18,5 +18,5 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/richieam93/FreeLLM-Chat-Conversation/issues",
   "requirements": [],
-  "version": "3.5.0"
+  "version": "3.8.1"
 }

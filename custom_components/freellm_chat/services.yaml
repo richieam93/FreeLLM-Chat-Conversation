@@ -1,6 +1,6 @@
 refresh_models:
   name: Modelle aktualisieren
-  description: Lädt den aktuellen Modellkatalog von LLM7.io und korrigiert bei Bedarf die Modellauswahl.
+  description: Lädt den Modellkatalog des aktiven KI-Anbieters und korrigiert bei Bedarf die Modellauswahl.
   fields:
     config_entry_id:
       name: Konfiguration
@@ -24,7 +24,7 @@ select_default_model:
 
 reset_usage_statistics:
   name: Lokale Nutzungsstatistik zurücksetzen
-  description: Löscht ausschließlich die lokal in Home Assistant gespeicherten Anfrage- und Tokenzähler. Daten im LLM7.io-Konto werden dadurch nicht verändert.
+  description: Löscht ausschließlich die lokal in Home Assistant gespeicherten Anfrage- und Tokenzähler. Daten beim externen KI-Anbieter werden dadurch nicht verändert.
   fields:
     config_entry_id:
       name: Konfiguration

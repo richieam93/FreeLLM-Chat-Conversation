@@ -2,40 +2,51 @@
   "title": "FreeLLM Chat Conversation",
   "config": {
     "error": {
-      "invalid_auth": "The API token was rejected. The field may be left empty.",
-      "cannot_connect": "Could not connect to LLM7.io.",
+      "invalid_auth": "The selected provider rejected the API key. Leave the field empty for anonymous access when supported.",
+      "cannot_connect": "Could not connect to the selected AI provider.",
       "unknown": "Unknown error while loading models.",
       "model_unavailable": "This model is no longer available.",
       "disclaimer_required": "You must acknowledge the external-service and AI disclaimer to continue."
     },
     "abort": {
-      "reconfigure_successful": "The API settings were updated."
+      "reconfigure_successful": "Provider and API settings were updated."
     },
     "step": {
       "user": {
         "title": "Set up FreeLLM Chat",
-        "description": "FreeLLM Chat uses the external [LLM7.io service]({website_url}). The API token is optional. Without a token, anonymous chat access is available with at least three models and, depending on the live catalog, possibly more. Create a [free API key]({api_key_url}) for higher published limits and read the [provider documentation]({docs_url}). The currently published reference values are 500,000 tokens per 24 hours and 60 requests per hour anonymously, or 1,000,000 tokens per 24 hours and 250 requests per hour with a free key. These values can change; check [service status]({status_url}).\n\n**Important:** AI responses may be inaccurate. Do not rely on them for legal, medical, financial, emergency, or safety-critical decisions. LLM7.io can change models, features, prices, and limits without notice. The service and this integration are provided as is.",
+        "description": "Choose the external AI provider. Supported providers are [LLM7.io]({llm7_url}) and [OVHcloud AI Endpoints]({ovh_url}). Both may be used without a personal API key when the provider allows anonymous access for the selected model. You can optionally store separate keys: [manage LLM7 key]({llm7_key_url}) or [manage OVHcloud access]({ovh_key_url}). OVHcloud currently documents 2 requests/minute per IP and model anonymously and 400 requests/minute per Public Cloud project and model with an access key. Prices and limits can change; read the [OVHcloud documentation]({ovh_docs_url}).\n\n**Important:** Chat text, required Home Assistant context, and tool schemas may be sent to the selected external provider. AI output can be wrong. Do not rely on it for legal, medical, financial, emergency, or safety-critical decisions.",
         "data": {
-          "api_key": "API token (optional)",
+          "provider": "AI provider",
+          "api_key": "LLM7 API key (optional)",
+          "ovh_api_key": "OVHcloud access key (optional)",
           "accept_disclaimer": "I understand and accept the disclaimer"
         },
         "data_description": {
-          "api_key": "Leave empty for anonymous access, or paste a key created in the LLM7.io dashboard.",
-          "accept_disclaimer": "Required to confirm that LLM7.io is an independent external service and model output may be wrong."
+          "provider": "Controls which external service receives chat requests.",
+          "api_key": "Used only with LLM7.io. Leave empty for anonymous access.",
+          "ovh_api_key": "Used only with OVHcloud AI Endpoints. Leave empty for anonymous access; authenticated use has higher published limits and may incur usage charges.",
+          "accept_disclaimer": "Confirms use of an independent external AI service and data transfer to it."
         }
       },
       "model": {
         "title": "Choose the initial model",
-        "description": "The loaded catalog currently contains **{free_model_count} models marked as usable without usage billing**. Access mode: **{access_mode}**. The live catalog is authoritative and may change. You can switch models later on the FreeLLM device. Device control uses function calling, which LLM7.io currently documents as a paid feature.",
+        "description": "Models usable without a mandatory API key: **{free_model_count}**. Active access: **{access_mode}**. You can change the model later in settings or on the FreeLLM device. OVHcloud gpt-oss-20b/120b support function calling and streaming.",
         "data": {
           "chat_model": "Chat model"
         }
       },
       "reconfigure": {
-        "title": "Change API access",
-        "description": "Add, replace, or remove the token. Create or manage a key in the [LLM7.io dashboard]({api_key_url}). Anonymous chat remains available when supported by the current catalog.",
+        "title": "Change provider and API access",
+        "description": "Choose LLM7.io or OVHcloud and optionally store a separate API key for each service. The inactive key remains stored and is never sent to the other provider.",
         "data": {
-          "api_key": "API token (optional)"
+          "provider": "AI provider",
+          "api_key": "LLM7 API key (optional)",
+          "ovh_api_key": "OVHcloud access key (optional)"
+        },
+        "data_description": {
+          "provider": "Active service for new chat requests.",
+          "api_key": "Used only with LLM7.io.",
+          "ovh_api_key": "Used only with OVHcloud AI Endpoints."
         }
       }
     }
@@ -48,6 +59,7 @@
       "init": {
         "title": "FreeLLM Chat settings",
         "menu_options": {
+          "provider_settings": "Provider and API access",
           "chat_settings": "Chat, context, and output",
           "model_settings": "Models and fallback",
           "control_settings": "Home Assistant control",
@@ -84,13 +96,13 @@
         "title": "Models and fallback",
         "description": "Filter models, choose a preferred fallback, and control catalog updates.",
         "data": {
-          "only_free_models": "Show token-free models only",
+          "only_free_models": "Show models that do not require an API key only",
           "fallback_model": "Preferred fallback model",
           "auto_update_models": "Update models automatically",
           "model_refresh_interval": "Update interval"
         },
         "data_description": {
-          "only_free_models": "Always applies when no API token is configured. With a token, it hides usage-based models.",
+          "only_free_models": "Filters models that require authenticated access. This does not necessarily mean usage is free of charge.",
           "fallback_model": "Used when the active model disappears or lacks a required capability.",
           "auto_update_models": "Regularly reloads the catalog and automatically corrects invalid selections.",
           "model_refresh_interval": "Hours between automatic updates."
@@ -98,23 +110,25 @@
       },
       "control_settings": {
         "title": "Home Assistant control and device queries",
-        "description": "Home Assistant official LLM tools perform actions. Additional read-only FreeLLM tools improve queries for devices, rooms, floors, states, numeric values, and unavailable entities. Only entities exposed to Assist are included. LLM7.io may restrict function calling depending on access mode.",
+        "description": "Home Assistant performs device actions through its LLM/intent tools. FreeLLM adds read-only queries. In token-saving mode tools are attached only for device/state requests. Function-calling availability depends on the active provider and model.",
         "data": {
           "enable_device_control": "Use device actions and states",
           "llm_hass_api": "Home Assistant LLM APIs",
           "enable_extended_device_queries": "Enable extended read-only device queries",
-          "device_query_max_results": "Maximum results per device query"
+          "device_query_max_results": "Maximum results per device query",
+          "token_saving_mode": "Token-saving context mode"
         },
         "data_description": {
           "enable_device_control": "Allows Home Assistant official actions, state queries, and follow-up actions. Only entities exposed to Assist are available.",
           "llm_hass_api": "Assist is normally the right choice. Without a valid API, device actions and extended queries are disabled.",
           "enable_extended_device_queries": "Adds accurate name search, area and floor summaries, and filters by domain, device class, state, availability, numeric value, and recent changes. These extra tools never change devices.",
-          "device_query_max_results": "Limits the size of one query result. Smaller values save tokens; larger values help with large areas."
+          "device_query_max_results": "Limits the size of one query result. Smaller values save tokens; larger values help with large areas.",
+          "token_saving_mode": "Recommended. Ordinary chat is sent without the large Home Assistant tool catalogue. Compact device tools are attached only when a device or state request is detected, greatly reducing input tokens. Disable this to restore the previous full-context behavior."
         }
       },
       "usage_settings": {
         "title": "Usage and reference limits",
-        "description": "Configure the local warning thresholds. Use 0 to automatically apply the access-mode reference values published on the LLM7.io main website. Provider pages can temporarily show different values, so these fields can be adjusted without a code update.",
+        "description": "Local warning thresholds. 0 uses the active provider reference value when that provider publishes the corresponding limit. These are local estimates, not provider account balances.",
         "data": {
           "reference_token_limit_24h": "Token reference limit per 24 hours",
           "reference_request_limit_hour": "Request reference limit per hour",
@@ -126,6 +140,20 @@
           "reference_request_limit_hour": "0 = automatic. Locally observed completed API attempts are counted.",
           "reference_request_limit_minute": "0 = automatic. Locally observed completed API attempts are counted.",
           "reference_request_limit_second": "0 = automatic. Locally observed completed API attempts are counted."
+        }
+      },
+      "provider_settings": {
+        "title": "Provider and API access",
+        "description": "Switch between LLM7.io and OVHcloud AI Endpoints. Keys are stored separately and only the active provider key is used.",
+        "data": {
+          "provider": "AI provider",
+          "api_key": "LLM7 API key (optional)",
+          "ovh_api_key": "OVHcloud access key (optional)"
+        },
+        "data_description": {
+          "provider": "Changing provider reloads the matching model catalog.",
+          "api_key": "LLM7 key; empty = anonymous access.",
+          "ovh_api_key": "OVHcloud key; empty = anonymous access. OVHcloud currently documents 400 requests/minute per project and model with a key versus 2 requests/minute anonymously."
         }
       }
     }
@@ -145,6 +173,12 @@
     "select": {
       "chat_model": {
         "name": "Chat model"
+      },
+      "fallback_model": {
+        "name": "Fallback model",
+        "state": {
+          "automatic": "Automatic"
+        }
       }
     },
     "sensor": {
@@ -179,13 +213,19 @@
       },
       "last_api_request": {
         "name": "Last API request"
+      },
+      "api_success_rate": {
+        "name": "API success rate (24 h)"
+      },
+      "api_latency": {
+        "name": "API latency (24 h average)"
       }
     }
   },
   "services": {
     "refresh_models": {
       "name": "Refresh models",
-      "description": "Load the latest LLM7.io model catalogue and correct invalid model selections.",
+      "description": "Reload the active AI provider model catalogue and correct invalid model selections.",
       "fields": {
         "config_entry_id": {
           "name": "Configuration",

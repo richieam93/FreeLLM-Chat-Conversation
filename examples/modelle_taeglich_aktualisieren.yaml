@@ -1,5 +1,5 @@
 alias: "FreeLLM - Modelle täglich aktualisieren"
-description: "Lädt den aktuellen LLM7-Modellkatalog einmal täglich neu."
+description: "Lädt den Modellkatalog des aktuell ausgewählten KI-Anbieters einmal täglich neu."
 triggers:
   - trigger: time
     at: "03:30:00"

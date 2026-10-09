@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import asyncio
+import json
 from collections.abc import Callable
 from datetime import datetime, timedelta
+from math import ceil
 from typing import Any
 
 from homeassistant.config_entries import ConfigEntry
@@ -19,22 +21,11 @@ from .const import (
     CONF_REFERENCE_REQUEST_LIMIT_SECOND,
     CONF_REFERENCE_TOKEN_LIMIT_24H,
 )
+from .provider import provider_reference_limits
 
 _STORE_VERSION = 1
 _MAX_EVENTS = 10_000
 _RETENTION = timedelta(days=7)
-
-# Reference limits published by LLM7.io. They can change without notice and are
-# intentionally exposed as estimates, never as authoritative server balances.
-ANONYMOUS_TOKEN_LIMIT_24H = 500_000
-ANONYMOUS_REQUEST_LIMIT_HOUR = 60
-ANONYMOUS_REQUEST_LIMIT_MINUTE = 10
-ANONYMOUS_REQUEST_LIMIT_SECOND = 1
-FREE_TOKEN_TOKEN_LIMIT_24H = 1_000_000
-FREE_TOKEN_REQUEST_LIMIT_HOUR = 250
-FREE_TOKEN_REQUEST_LIMIT_MINUTE = 60
-FREE_TOKEN_REQUEST_LIMIT_SECOND = 2
-
 
 class UsageManager:
     """Track local conversations, API calls, tokens, and recent failures."""
@@ -63,6 +54,14 @@ class UsageManager:
         self.last_latency_ms: int | None = None
         self.last_error: str | None = None
         self.last_status: int | None = None
+        self.last_input_tokens: int | None = None
+        self.last_output_tokens: int | None = None
+        self.last_total_tokens: int | None = None
+        self.last_payload_chars: int | None = None
+        self.last_estimated_input_tokens: int | None = None
+        self.last_message_count: int | None = None
+        self.last_tool_count: int | None = None
+        self.last_context_mode: str | None = None
         self._events: list[dict[str, Any]] = []
         self._listeners: set[Callable[[], None]] = set()
         self._lock = asyncio.Lock()
@@ -73,46 +72,46 @@ class UsageManager:
     @property
     def access_mode(self) -> str:
         """Return the locally detectable access mode."""
-        return "token" if self.client.has_api_key else "anonymous"
+        return "api_key" if self.client.has_api_key else "anonymous"
+
+    @property
+    def provider(self) -> str:
+        return self.client.provider_name
+
+    @property
+    def limits_source_url(self) -> str:
+        return self.client.docs_url
 
     @property
     def reference_token_limit_24h(self) -> int:
         """Return the configured or published reference token quota."""
-        default = (
-            FREE_TOKEN_TOKEN_LIMIT_24H
-            if self.client.has_api_key
-            else ANONYMOUS_TOKEN_LIMIT_24H
-        )
+        default = provider_reference_limits(
+            self.client.provider, self.client.has_api_key
+        )["tokens_24h"]
         return self._configured_limit(CONF_REFERENCE_TOKEN_LIMIT_24H, default)
 
     @property
     def reference_request_limit_hour(self) -> int:
         """Return the configured or published hourly request limit."""
-        default = (
-            FREE_TOKEN_REQUEST_LIMIT_HOUR
-            if self.client.has_api_key
-            else ANONYMOUS_REQUEST_LIMIT_HOUR
-        )
+        default = provider_reference_limits(
+            self.client.provider, self.client.has_api_key
+        )["requests_hour"]
         return self._configured_limit(CONF_REFERENCE_REQUEST_LIMIT_HOUR, default)
 
     @property
     def reference_request_limit_minute(self) -> int:
         """Return the configured or published per-minute request limit."""
-        default = (
-            FREE_TOKEN_REQUEST_LIMIT_MINUTE
-            if self.client.has_api_key
-            else ANONYMOUS_REQUEST_LIMIT_MINUTE
-        )
+        default = provider_reference_limits(
+            self.client.provider, self.client.has_api_key
+        )["requests_minute"]
         return self._configured_limit(CONF_REFERENCE_REQUEST_LIMIT_MINUTE, default)
 
     @property
     def reference_request_limit_second(self) -> int:
         """Return the configured or published per-second request limit."""
-        default = (
-            FREE_TOKEN_REQUEST_LIMIT_SECOND
-            if self.client.has_api_key
-            else ANONYMOUS_REQUEST_LIMIT_SECOND
-        )
+        default = provider_reference_limits(
+            self.client.provider, self.client.has_api_key
+        )["requests_second"]
         return self._configured_limit(CONF_REFERENCE_REQUEST_LIMIT_SECOND, default)
 
     def _configured_limit(self, key: str, default: int) -> int:
@@ -158,9 +157,47 @@ class UsageManager:
         )
 
     @property
-    def estimated_tokens_remaining_24h(self) -> int:
-        """Return a local estimate; this is not the provider account balance."""
-        return max(0, self.reference_token_limit_24h - self.tokens_24h)
+    def success_rate_24h(self) -> float | None:
+        """Return the local successful API-attempt rate over the last 24 hours."""
+        events = [
+            event
+            for event in self._recent_events(timedelta(hours=24))
+            if isinstance(event.get("success"), bool)
+        ]
+        if not events:
+            return None
+        successes = sum(event.get("success") is True for event in events)
+        return round(successes / len(events) * 100, 1)
+
+    @property
+    def average_latency_24h(self) -> int | None:
+        """Return average completed API-attempt latency over the last 24 hours."""
+        values = self._latencies_24h()
+        return round(sum(values) / len(values)) if values else None
+
+    @property
+    def p95_latency_24h(self) -> int | None:
+        """Return nearest-rank P95 API-attempt latency over the last 24 hours."""
+        values = sorted(self._latencies_24h())
+        if not values:
+            return None
+        index = max(0, ceil(len(values) * 0.95) - 1)
+        return values[index]
+
+    def _latencies_24h(self) -> list[int]:
+        """Return valid non-negative latency samples from the last 24 hours."""
+        return [
+            latency
+            for event in self._recent_events(timedelta(hours=24))
+            if (latency := _safe_optional_int(event.get("latency_ms"))) is not None
+            and latency >= 0
+        ]
+
+    @property
+    def estimated_tokens_remaining_24h(self) -> int | None:
+        """Return a local estimate when the provider publishes a token quota."""
+        limit = self.reference_token_limit_24h
+        return max(0, limit - self.tokens_24h) if limit > 0 else None
 
     @property
     def quota_usage_percent(self) -> float:
@@ -198,39 +235,46 @@ class UsageManager:
 
     @property
     def limiting_metric(self) -> str:
-        """Return the reference limit currently closest to exhaustion."""
-        values = {
-            "tokens_24h": self.quota_usage_percent,
-            "requests_hour": self.request_hour_usage_percent,
-            "requests_minute": self.request_minute_usage_percent,
-            "requests_second": self.request_second_usage_percent,
-        }
-        return max(values, key=values.get)
+        """Return the published/configured limit currently closest to exhaustion."""
+        values: dict[str, float] = {}
+        if self.reference_token_limit_24h > 0:
+            values["tokens_24h"] = self.quota_usage_percent
+        if self.reference_request_limit_hour > 0:
+            values["requests_hour"] = self.request_hour_usage_percent
+        if self.reference_request_limit_minute > 0:
+            values["requests_minute"] = self.request_minute_usage_percent
+        if self.reference_request_limit_second > 0:
+            values["requests_second"] = self.request_second_usage_percent
+        return max(values, key=values.get) if values else "unknown"
 
     @property
-    def estimated_requests_remaining_hour(self) -> int:
-        return max(0, self.reference_request_limit_hour - self.requests_hour)
+    def estimated_requests_remaining_hour(self) -> int | None:
+        limit = self.reference_request_limit_hour
+        return max(0, limit - self.requests_hour) if limit > 0 else None
 
     @property
-    def estimated_requests_remaining_minute(self) -> int:
-        return max(0, self.reference_request_limit_minute - self.requests_minute)
+    def estimated_requests_remaining_minute(self) -> int | None:
+        limit = self.reference_request_limit_minute
+        return max(0, limit - self.requests_minute) if limit > 0 else None
 
     @property
-    def estimated_requests_remaining_second(self) -> int:
-        return max(0, self.reference_request_limit_second - self.requests_second)
+    def estimated_requests_remaining_second(self) -> int | None:
+        limit = self.reference_request_limit_second
+        return max(0, limit - self.requests_second) if limit > 0 else None
 
     @property
     def quota_status(self) -> str:
         """Return a local reference-limit state."""
-        token_ratio = self.tokens_24h / max(1, self.reference_token_limit_24h)
-        hour_ratio = self.requests_hour / max(1, self.reference_request_limit_hour)
-        minute_ratio = self.requests_minute / max(
-            1, self.reference_request_limit_minute
-        )
-        second_ratio = self.requests_second / max(
-            1, self.reference_request_limit_second
-        )
-        ratio = max(token_ratio, hour_ratio, minute_ratio, second_ratio)
+        ratios: list[float] = []
+        for used, limit in (
+            (self.tokens_24h, self.reference_token_limit_24h),
+            (self.requests_hour, self.reference_request_limit_hour),
+            (self.requests_minute, self.reference_request_limit_minute),
+            (self.requests_second, self.reference_request_limit_second),
+        ):
+            if limit > 0:
+                ratios.append(used / limit)
+        ratio = max(ratios, default=0.0)
         if ratio >= 1:
             return "limit_reached"
         if ratio >= 0.8:
@@ -267,6 +311,16 @@ class UsageManager:
         self.last_latency_ms = _safe_optional_int(data.get("last_latency_ms"))
         self.last_error = _safe_optional_string(data.get("last_error"))
         self.last_status = _safe_optional_int(data.get("last_status"))
+        self.last_input_tokens = _safe_optional_int(data.get("last_input_tokens"))
+        self.last_output_tokens = _safe_optional_int(data.get("last_output_tokens"))
+        self.last_total_tokens = _safe_optional_int(data.get("last_total_tokens"))
+        self.last_payload_chars = _safe_optional_int(data.get("last_payload_chars"))
+        self.last_estimated_input_tokens = _safe_optional_int(
+            data.get("last_estimated_input_tokens")
+        )
+        self.last_message_count = _safe_optional_int(data.get("last_message_count"))
+        self.last_tool_count = _safe_optional_int(data.get("last_tool_count"))
+        self.last_context_mode = _safe_optional_string(data.get("last_context_mode"))
         events = data.get("events")
         if isinstance(events, list):
             self._events = [event for event in events if isinstance(event, dict)]
@@ -276,6 +330,23 @@ class UsageManager:
         """Record one Home Assistant user conversation request."""
         async with self._lock:
             self.total_conversations += 1
+            await self._async_save()
+        self._notify_listeners()
+
+    async def async_record_payload_estimate(
+        self, payload: dict[str, Any], *, context_mode: str
+    ) -> None:
+        """Store a local preflight estimate of the outgoing request size."""
+        encoded = json.dumps(payload, ensure_ascii=False, default=str)
+        messages = payload.get("messages")
+        tools = payload.get("tools")
+        async with self._lock:
+            self.last_payload_chars = len(encoded)
+            # Diagnostic approximation only; provider tokenization is authoritative.
+            self.last_estimated_input_tokens = ceil(len(encoded) / 4)
+            self.last_message_count = len(messages) if isinstance(messages, list) else 0
+            self.last_tool_count = len(tools) if isinstance(tools, list) else 0
+            self.last_context_mode = context_mode
             await self._async_save()
         self._notify_listeners()
 
@@ -310,6 +381,9 @@ class UsageManager:
                 self.successful_api_requests += 1
                 self.last_success_at = now
                 self.last_error = None
+                self.last_input_tokens = input_tokens
+                self.last_output_tokens = output_tokens
+                self.last_total_tokens = total_tokens
                 self.input_tokens += input_tokens
                 self.output_tokens += output_tokens
                 self.total_tokens += total_tokens
@@ -321,6 +395,7 @@ class UsageManager:
             self._events.append(
                 {
                     "timestamp": now.isoformat(),
+                    "provider": self.client.provider,
                     "success": success,
                     "model": model,
                     "provider_model": provider_model,
@@ -353,6 +428,14 @@ class UsageManager:
             self.last_latency_ms = None
             self.last_error = None
             self.last_status = None
+            self.last_input_tokens = None
+            self.last_output_tokens = None
+            self.last_total_tokens = None
+            self.last_payload_chars = None
+            self.last_estimated_input_tokens = None
+            self.last_message_count = None
+            self.last_tool_count = None
+            self.last_context_mode = None
             self._events = []
             await self._async_save()
         self._notify_listeners()
@@ -378,6 +461,10 @@ class UsageManager:
             for event in self._events
             if (timestamp := _parse_datetime(event.get("timestamp")))
             and timestamp >= cutoff
+            and (
+                event.get("provider") == self.client.provider
+                or (event.get("provider") is None and self.client.provider == "llm7")
+            )
         ]
 
     def _prune_events(self) -> None:
@@ -407,6 +494,14 @@ class UsageManager:
                 "last_latency_ms": self.last_latency_ms,
                 "last_error": self.last_error,
                 "last_status": self.last_status,
+                "last_input_tokens": self.last_input_tokens,
+                "last_output_tokens": self.last_output_tokens,
+                "last_total_tokens": self.last_total_tokens,
+                "last_payload_chars": self.last_payload_chars,
+                "last_estimated_input_tokens": self.last_estimated_input_tokens,
+                "last_message_count": self.last_message_count,
+                "last_tool_count": self.last_tool_count,
+                "last_context_mode": self.last_context_mode,
                 "events": self._events,
             }
         )

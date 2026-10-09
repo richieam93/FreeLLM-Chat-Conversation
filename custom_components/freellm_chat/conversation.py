@@ -12,31 +12,30 @@ from pathlib import Path
 from time import monotonic
 from typing import Any, Literal, override
 
-from voluptuous_openapi import convert
+from probatio import to_openapi
 
 from homeassistant.components import conversation
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import CONF_LLM_HASS_API, CONF_PROMPT, MATCH_ALL
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers import llm
+from homeassistant.helpers import intent, llm
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 
 from .api import LLM7Client, LLM7ConnectionError, LLM7Error, LLM7ResponseError
 from .const import (
+    AUTO_FALLBACK_MODEL,
     CONF_DEVICE_QUERY_MAX_RESULTS,
     CONF_ENABLE_DEVICE_CONTROL,
     CONF_ENABLE_EXTENDED_DEVICE_QUERIES,
     CONF_ENABLE_STREAMING,
     CONF_ENABLE_VISION,
+    CONF_FALLBACK_MODEL,
     CONF_HISTORY_LIMIT,
     CONF_MAX_TOKENS,
     CONF_MAX_TOOL_ITERATIONS,
     CONF_RETRY_COUNT,
     CONF_TEMPERATURE,
     CONF_TIMEOUT,
-    DATA_CLIENT,
-    DATA_MODEL_MANAGER,
-    DATA_USAGE_MANAGER,
+    CONF_TOKEN_SAVING_MODE,
     DEFAULT_DEVICE_QUERY_MAX_RESULTS,
     DEFAULT_ENABLE_DEVICE_CONTROL,
     DEFAULT_ENABLE_EXTENDED_DEVICE_QUERIES,
@@ -49,9 +48,16 @@ from .const import (
     DEFAULT_RETRY_COUNT,
     DEFAULT_TEMPERATURE,
     DEFAULT_TIMEOUT,
+    DEFAULT_TOKEN_SAVING_MODE,
     DOMAIN,
+    LEAN_DEFAULT_PROMPT,
+    LEAN_DEVICE_PROMPT,
+    LEAN_HISTORY_LIMIT,
+    LEAN_MAX_TOKENS,
+    LEAN_MAX_TOOL_ITERATIONS,
     MAX_ATTACHMENT_BYTES,
     MAX_IMAGE_ATTACHMENTS,
+    MAX_RUNTIME_MODEL_FAILOVERS,
     MAX_TOOL_CALLS_PER_ROUND,
     MAX_TOOL_RESULT_CHARS,
     MAX_TOTAL_ATTACHMENT_BYTES,
@@ -70,17 +76,49 @@ from .device_query import (
 )
 from .entity import service_device_info
 from .model_manager import (
+    choose_default_model,
+    model_is_compatible,
     model_supports_streaming,
     model_supports_vision,
 )
+from .runtime import FreeLLMConfigEntry
 from .usage_manager import UsageManager
 
 _LOGGER = logging.getLogger(__name__)
 
+_HOME_ASSISTANT_HINTS = (
+    "home assistant", "licht", "lampe", "light", "schalter", "switch",
+    "steckdose", "plug", "sensor", "temperatur", "temperature", "warm",
+    "heizung", "thermostat", "climate", "feuchtigkeit", "humidity", "co2",
+    "luftqualität", "luftqualitaet", "rollladen", "jalousie", "cover",
+    "tür", "tuer", "door", "fenster", "window", "garage", "szene",
+    "scene", "automation", "routine", "klingel", "alarm", "kamera",
+    "camera", "küche", "kueche", "wohnzimmer", "schlafzimmer", "bad",
+)
+_HOME_ASSISTANT_ACTION_STEMS = (
+    "schalt", "ausschalt", "einschalt", "dimm", "öffn", "oeffn",
+    "schließ", "schliess", "stell", "setze", "turn ", "switch ",
+)
+
+
+def _looks_like_home_assistant_request(text: str) -> bool:
+    """Cheap local routing: attach HA tools only when they are plausibly needed."""
+    value = " ".join(text.casefold().split())
+    if not value:
+        return False
+    if any(hint in value for hint in _HOME_ASSISTANT_HINTS):
+        return True
+    if any(stem in value for stem in _HOME_ASSISTANT_ACTION_STEMS):
+        return True
+    words = value.replace("?", " ").replace("!", " ").split()
+    return len(words) <= 6 and any(
+        word in {"an", "aus", "on", "off"} for word in words
+    )
+
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: FreeLLMConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up the conversation entity."""
@@ -91,17 +129,19 @@ class FreeLLMConversationEntity(
     conversation.ConversationEntity,
     conversation.AbstractConversationAgent,
 ):
-    """LLM7-backed Home Assistant conversation agent."""
+    """OpenAI-compatible Home Assistant conversation agent."""
 
     _attr_has_entity_name = True
     _attr_name = None
-    _attr_attribution = "External AI service: LLM7.io"
     _attr_supports_streaming = True
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: FreeLLMConfigEntry) -> None:
         self.entry = entry
         self._attr_unique_id = entry.entry_id
         self._attr_device_info = service_device_info(entry)
+        self._attr_attribution = (
+            f"External AI service: {entry.runtime_data.client.provider_name}"
+        )
         if self._control_enabled:
             self._attr_supported_features = (
                 conversation.ConversationEntityFeature.CONTROL
@@ -141,27 +181,78 @@ class FreeLLMConversationEntity(
         chat_log: conversation.ChatLog,
     ) -> conversation.ConversationResult:
         """Process input, execute Home Assistant tools, and return the reply."""
-        runtime = self.hass.data[DOMAIN][self.entry.entry_id]
-        client: LLM7Client = runtime[DATA_CLIENT]
-        model_manager = runtime[DATA_MODEL_MANAGER]
-        usage_manager: UsageManager = runtime[DATA_USAGE_MANAGER]
+        runtime = self.entry.runtime_data
+        client: LLM7Client = runtime.client
+        model_manager = runtime.model_manager
+        usage_manager: UsageManager = runtime.usage_manager
         options = self.entry.options
         await usage_manager.async_record_conversation()
 
         control_enabled = self._control_enabled
-        selected_apis = options.get(CONF_LLM_HASS_API) if control_enabled else None
-        query_enabled = bool(
+        lean_mode = bool(
+            options.get(CONF_TOKEN_SAVING_MODE, DEFAULT_TOKEN_SAVING_MODE)
+        )
+        device_request = bool(
             control_enabled
+            and (
+                not lean_mode
+                or _looks_like_home_assistant_request(user_input.text)
+            )
+        )
+
+        if lean_mode and device_request:
+            # Prefer Home Assistant's built-in local intent engine. Common
+            # commands such as "Küchenlicht aus" can then be executed without
+            # any external LLM request or token use at all. Complex/fuzzy
+            # requests fall through to the compact LLM tool path below.
+            try:
+                local_response = await conversation.async_handle_intents(
+                    self.hass, user_input, chat_log
+                )
+            except Exception:  # Home Assistant intent/template integrations can fail.
+                _LOGGER.debug(
+                    "Local Assist intent handling failed; falling back to LLM",
+                    exc_info=True,
+                )
+                local_response = None
+            if (
+                local_response is not None
+                and local_response.response_type is not intent.IntentResponseType.ERROR
+            ):
+                speech = local_response.speech.get("plain", {}).get("speech", "")
+                chat_log.async_add_assistant_content_without_tools(
+                    conversation.AssistantContent(
+                        agent_id=self.entity_id or self.entry.entry_id,
+                        content=speech or "Erledigt.",
+                    )
+                )
+                return conversation.ConversationResult(
+                    response=local_response,
+                    conversation_id=chat_log.conversation_id,
+                )
+
+        selected_apis = options.get(CONF_LLM_HASS_API) if device_request else None
+        query_enabled = bool(
+            device_request
             and options.get(
                 CONF_ENABLE_EXTENDED_DEVICE_QUERIES,
                 DEFAULT_ENABLE_EXTENDED_DEVICE_QUERIES,
             )
         )
-        prompt = options.get(CONF_PROMPT, DEFAULT_PROMPT)
-        if control_enabled:
-            prompt = f"{prompt}\n\n{DEVICE_CONTROL_PROMPT}"
-        if query_enabled:
-            prompt = f"{prompt}\n\n{DEVICE_QUERY_PROMPT}"
+
+        configured_prompt = options.get(CONF_PROMPT, DEFAULT_PROMPT)
+        prompt = (
+            LEAN_DEFAULT_PROMPT
+            if lean_mode and configured_prompt == DEFAULT_PROMPT
+            else configured_prompt
+        )
+        if lean_mode and device_request:
+            prompt = f"{prompt}\n\n{LEAN_DEVICE_PROMPT}"
+        elif not lean_mode:
+            if control_enabled:
+                prompt = f"{prompt}\n\n{DEVICE_CONTROL_PROMPT}"
+            if query_enabled:
+                prompt = f"{prompt}\n\n{DEVICE_QUERY_PROMPT}"
 
         try:
             await chat_log.async_provide_llm_data(
@@ -180,12 +271,33 @@ class FreeLLMConversationEntity(
                 minimum=5,
                 maximum=100,
             )
-            if control_enabled:
+            if lean_mode:
+                # HA 2026.9 can aggregate a broad native tool catalogue. The
+                # compact FreeLLM tools cover our device use cases with a much
+                # smaller schema, which materially reduces billed input tokens.
+                chat_log.llm_api.tools.clear()
+            if device_request:
                 prepare_device_control_tools(
                     chat_log.llm_api, device_result_limit, user_input.text
                 )
             if query_enabled:
                 append_device_query_tools(chat_log.llm_api, device_result_limit)
+
+        if lean_mode:
+            # async_provide_llm_data may append the selected HA API prompt to the
+            # system message. Keep the API instance for tool execution, but send
+            # only our compact system instructions to the external provider.
+            lean_system_prompt = prompt
+            if user_input.extra_system_prompt:
+                lean_system_prompt = (
+                    f"{lean_system_prompt}\n\n{user_input.extra_system_prompt}"
+                )
+            for index, content in enumerate(chat_log.content):
+                if content.role == "system":
+                    chat_log.content[index] = replace(
+                        content, content=lean_system_prompt
+                    )
+                    break
 
         image_requested = _has_image_attachments(chat_log.content)
         if _has_unsupported_image_attachments(chat_log.content):
@@ -204,9 +316,12 @@ class FreeLLMConversationEntity(
                 "Bildeingaben sind in den FreeLLM-Chat-Einstellungen deaktiviert.",
             )
 
+        tools = _format_tools(chat_log)
+        tools_required = bool(tools)
+
         try:
             model = await model_manager.async_ensure_valid_model(
-                require_tools=control_enabled,
+                require_tools=tools_required,
                 require_vision=image_requested,
             )
         except LLM7Error as err:
@@ -219,7 +334,6 @@ class FreeLLMConversationEntity(
                 "Für die Bildeingabe ist aktuell kein geeignetes Modell verfügbar.",
             )
 
-        tools = _format_tools(chat_log)
         timeout = _bounded_int(
             options.get(CONF_TIMEOUT), DEFAULT_TIMEOUT, minimum=10, maximum=300
         )
@@ -241,8 +355,21 @@ class FreeLLMConversationEntity(
             minimum=1,
             maximum=20,
         )
+        request_max_tokens = _bounded_int(
+            options.get(CONF_MAX_TOKENS),
+            DEFAULT_MAX_TOKENS,
+            minimum=100,
+            maximum=32000,
+        )
+        if lean_mode:
+            history_limit = min(history_limit, LEAN_HISTORY_LIMIT)
+            max_iterations = min(max_iterations, LEAN_MAX_TOOL_ITERATIONS)
+            request_max_tokens = min(request_max_tokens, LEAN_MAX_TOKENS)
+
         attachment_cache: dict[Path, tuple[str, int] | None] = {}
         tool_call_tracker = _ToolCallTracker()
+        failed_models: set[str] = set()
+        runtime_failovers = 0
 
         for _iteration in range(max_iterations):
             try:
@@ -264,12 +391,12 @@ class FreeLLMConversationEntity(
                 temperature=float(
                     options.get(CONF_TEMPERATURE, DEFAULT_TEMPERATURE)
                 ),
-                max_tokens=_bounded_int(
-                    options.get(CONF_MAX_TOKENS),
-                    DEFAULT_MAX_TOKENS,
-                    minimum=100,
-                    maximum=32000,
-                ),
+                max_tokens=request_max_tokens,
+            )
+
+            await usage_manager.async_record_payload_estimate(
+                payload,
+                context_mode="lean" if lean_mode else "full",
             )
 
             streaming = bool(
@@ -314,7 +441,9 @@ class FreeLLMConversationEntity(
                         message = _extract_message(data)
                         if message is None:
                             raise LLM7ResponseError(
-                                "LLM7.io hat keine verwertbare Chat-Antwort geliefert."
+                                f"{client.provider_name} hat keine verwertbare "
+                                "Chat-Antwort geliefert.",
+                                provider_name=client.provider_name,
                             )
                         assistant_content = _assistant_content_from_message(
                             self.entity_id or self.entry.entry_id,
@@ -328,7 +457,8 @@ class FreeLLMConversationEntity(
                             and not assistant_content.tool_calls
                         ):
                             raise LLM7ResponseError(
-                                "Das Modell hat eine leere Antwort geliefert."
+                                "Das Modell hat eine leere Antwort geliefert.",
+                                provider_name=client.provider_name,
                             )
                         _trace_usage(chat_log, data, model)
                         async for tool_result in chat_log.async_add_assistant_content(
@@ -345,7 +475,7 @@ class FreeLLMConversationEntity(
                         try:
                             await model_manager.async_refresh(force=True)
                             model = await model_manager.async_ensure_valid_model(
-                                require_tools=control_enabled,
+                                require_tools=tools_required,
                                 require_vision=image_requested,
                             )
                             model_metadata = model_manager.get_model(model) or {}
@@ -359,12 +489,7 @@ class FreeLLMConversationEntity(
                                         CONF_TEMPERATURE, DEFAULT_TEMPERATURE
                                     )
                                 ),
-                                max_tokens=_bounded_int(
-                                    options.get(CONF_MAX_TOKENS),
-                                    DEFAULT_MAX_TOKENS,
-                                    minimum=100,
-                                    maximum=32000,
-                                ),
+                                max_tokens=request_max_tokens,
                             )
                             streaming = bool(
                                 options.get(
@@ -380,7 +505,57 @@ class FreeLLMConversationEntity(
                                 "Das gewählte Modell ist nicht mehr verfügbar: "
                                 f"{refresh_err}",
                             )
-                    return _error_result(user_input, chat_log, str(err))
+                    if (
+                        _is_runtime_failover_error(err)
+                        and not err.partial_response
+                        and runtime_failovers < MAX_RUNTIME_MODEL_FAILOVERS
+                    ):
+                        failed_models.add(model)
+                        alternate = _choose_runtime_failover_model(
+                            model_manager,
+                            excluded=failed_models,
+                            require_tools=tools_required,
+                            require_vision=image_requested,
+                        )
+                        if alternate is not None:
+                            previous_model = model
+                            model = alternate
+                            model_metadata = model_manager.get_model(model) or {}
+                            payload = _build_payload(
+                                model=model,
+                                model_metadata=model_metadata,
+                                messages=messages,
+                                tools=tools,
+                                temperature=float(
+                                    options.get(
+                                        CONF_TEMPERATURE, DEFAULT_TEMPERATURE
+                                    )
+                                ),
+                                max_tokens=request_max_tokens,
+                            )
+                            streaming = bool(
+                                options.get(
+                                    CONF_ENABLE_STREAMING, DEFAULT_ENABLE_STREAMING
+                                )
+                                and model_supports_streaming(model_metadata)
+                            )
+                            adapted_parameters.clear()
+                            runtime_failovers += 1
+                            _LOGGER.warning(
+                                "Transient provider error %s on model %s; "
+                                "failing over to %s (%s/%s)",
+                                err.status,
+                                previous_model,
+                                model,
+                                runtime_failovers,
+                                MAX_RUNTIME_MODEL_FAILOVERS,
+                            )
+                            continue
+                    return _error_result(
+                        user_input,
+                        chat_log,
+                        _friendly_request_error(err, failed_models | {model}),
+                    )
                 except LLM7Error as err:
                     return _error_result(user_input, chat_log, str(err))
 
@@ -658,12 +833,25 @@ async def _request_with_retries(
                 error=str(err),
                 status=err.status,
             )
-            retryable = err.status == 429 or (
-                err.status is not None and err.status >= 500
-            )
-            if not retryable or attempt >= retry_count:
-                raise
-            delay = min(err.retry_after or 0.5 * (2**attempt), 10.0)
+            if err.status == 429:
+                # Rate limits are normally scoped to the API key/client rather than
+                # a single model. Do not hammer the API or amplify a quota error.
+                # Retry only when the provider explicitly asks for a short wait.
+                if (
+                    attempt >= retry_count
+                    or err.retry_after is None
+                    or err.retry_after <= 0
+                    or err.retry_after > 10
+                ):
+                    raise
+                delay = err.retry_after
+            else:
+                retryable = err.status in {408, 425} or (
+                    err.status is not None and err.status >= 500
+                )
+                if not retryable or attempt >= retry_count:
+                    raise
+                delay = min(0.5 * (2**attempt), 10.0)
         await asyncio.sleep(delay)
 
     assert last_error is not None
@@ -689,7 +877,9 @@ async def _stream_with_retries(
             async for chunk in client.async_chat_completion_stream(payload, timeout):
                 if isinstance(chunk.get("error"), dict):
                     message = chunk["error"].get("message") or "Streaming-Fehler"
-                    raise LLM7ResponseError(str(message))
+                    raise LLM7ResponseError(
+                        str(message), provider_name=client.provider_name
+                    )
                 emitted = True
                 if isinstance(chunk.get("usage"), dict):
                     usage_data = chunk["usage"]
@@ -727,12 +917,27 @@ async def _stream_with_retries(
                 error=str(err),
                 status=err.status,
             )
-            retryable = err.status == 429 or (
-                err.status is not None and err.status >= 500
-            )
-            if emitted or not retryable or attempt >= retry_count:
-                raise
-            delay = min(err.retry_after or 0.5 * (2**attempt), 10.0)
+            if err.status == 429:
+                # A rate-limit response is generally client/quota scoped. Switching
+                # models would multiply requests without increasing the allowance.
+                if (
+                    emitted
+                    or attempt >= retry_count
+                    or err.retry_after is None
+                    or err.retry_after <= 0
+                    or err.retry_after > 10
+                ):
+                    err.partial_response = emitted
+                    raise
+                delay = err.retry_after
+            else:
+                retryable = err.status in {408, 425} or (
+                    err.status is not None and err.status >= 500
+                )
+                if emitted or not retryable or attempt >= retry_count:
+                    err.partial_response = emitted
+                    raise
+                delay = min(0.5 * (2**attempt), 10.0)
         await asyncio.sleep(delay)
 
 
@@ -816,9 +1021,10 @@ def _format_tools(chat_log: conversation.ChatLog) -> list[dict[str, Any]]:
 
     result: list[dict[str, Any]] = []
     for tool in chat_log.llm_api.tools:
-        schema = convert(
+        schema = to_openapi(
             tool.parameters,
             custom_serializer=chat_log.llm_api.custom_serializer,
+            openapi_version="3.1.0",
         )
         schema = _sanitize_tool_schema(schema)
         result.append(
@@ -1154,6 +1360,79 @@ def _trace_usage(
             if isinstance(value, int)
         }
     chat_log.async_trace(details)
+
+
+def _is_runtime_failover_error(err: LLM7ResponseError) -> bool:
+    """Return whether another compatible model may recover the request."""
+    # Do not automatically multiply requests after HTTP 429. Even where a
+    # provider scopes limits per model, preserving quota is the safer default.
+    return err.status in {408, 425} or (
+        err.status is not None and err.status >= 500
+    )
+
+
+def _choose_runtime_failover_model(
+    model_manager: Any,
+    *,
+    excluded: set[str],
+    require_tools: bool,
+    require_vision: bool,
+) -> str | None:
+    """Choose another compatible model without changing saved settings."""
+    candidates = [
+        item
+        for item in model_manager.models
+        if (
+            isinstance(item, dict)
+            and item.get("id") not in excluded
+            and model_is_compatible(
+                item,
+                require_tools=require_tools,
+                require_vision=require_vision,
+            )
+        )
+    ]
+    if not candidates:
+        return None
+    preferred = model_manager.entry.options.get(
+        CONF_FALLBACK_MODEL, AUTO_FALLBACK_MODEL
+    )
+    selected = choose_default_model(
+        candidates,
+        require_tools=require_tools,
+        require_vision=require_vision,
+        preferred=preferred,
+    )
+    return selected if model_manager.get_model(selected) is not None else None
+
+
+def _friendly_request_error(
+    err: LLM7ResponseError, attempted_models: set[str]
+) -> str:
+    """Return an actionable provider error for the Assist chat."""
+    provider = err.provider_name or "KI-Anbieter"
+    if err.status is not None and err.status >= 500:
+        models = ", ".join(sorted(attempted_models))
+        suffix = f" Versuchte Modelle: {models}." if models else ""
+        return (
+            f"{provider} bzw. der Modellanbieter ist vorübergehend nicht "
+            f"verfügbar (HTTP {err.status}).{suffix}"
+        )
+    if err.status == 429:
+        provider_message = str(err).strip()
+        if len(provider_message) > 300:
+            provider_message = provider_message[:297] + "..."
+        wait_hint = ""
+        if err.retry_after is not None and err.retry_after > 0:
+            wait_seconds = max(1, round(err.retry_after))
+            wait_hint = f" Laut Server in etwa {wait_seconds} s erneut versuchen."
+        details = (
+            f" Servermeldung: {provider_message}"
+            if provider_message and provider_message != "HTTP 429"
+            else ""
+        )
+        return f"{provider} Rate-Limit (HTTP 429).{wait_hint}{details}"
+    return str(err)
 
 
 def _looks_like_missing_model(err: LLM7ResponseError) -> bool:

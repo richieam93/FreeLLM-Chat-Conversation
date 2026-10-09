@@ -5,8 +5,11 @@ from __future__ import annotations
 from datetime import timedelta
 
 DOMAIN = "freellm_chat"
+INTEGRATION_VERSION = "3.8.1"
 
-CONF_API_KEY = "api_key"
+CONF_API_KEY = "api_key"  # legacy/current LLM7 key
+CONF_OVH_API_KEY = "ovh_api_key"
+CONF_PROVIDER = "provider"
 CONF_ACCEPT_DISCLAIMER = "accept_disclaimer"
 CONF_CHAT_MODEL = "chat_model"
 CONF_FALLBACK_MODEL = "fallback_model"
@@ -20,6 +23,7 @@ CONF_MAX_TOOL_ITERATIONS = "max_tool_iterations"
 CONF_ENABLE_STREAMING = "enable_streaming"
 CONF_ENABLE_VISION = "enable_vision"
 CONF_ENABLE_DEVICE_CONTROL = "enable_device_control"
+CONF_TOKEN_SAVING_MODE = "token_saving_mode"
 CONF_ENABLE_EXTENDED_DEVICE_QUERIES = "enable_extended_device_queries"
 CONF_DEVICE_QUERY_MAX_RESULTS = "device_query_max_results"
 CONF_AUTO_UPDATE_MODELS = "auto_update_models"
@@ -30,23 +34,15 @@ CONF_REFERENCE_REQUEST_LIMIT_HOUR = "reference_request_limit_hour"
 CONF_REFERENCE_REQUEST_LIMIT_MINUTE = "reference_request_limit_minute"
 CONF_REFERENCE_REQUEST_LIMIT_SECOND = "reference_request_limit_second"
 
-LLM7_BASE_URL = "https://api.llm7.io/v1"
-LLM7_MODELS_URL = f"{LLM7_BASE_URL}/models"
-LLM7_CHAT_URL = f"{LLM7_BASE_URL}/chat/completions"
-LLM7_WEB_URL = "https://llm7.io"
-LLM7_DASHBOARD_URL = "https://dash.llm7.io/"
-LLM7_DOCS_URL = "https://docs.llm7.io/"
-LLM7_STATUS_URL = "https://status.llm7.io/"
 PROJECT_URL = "https://github.com/richieam93/FreeLLM-Chat-Conversation"
 
-DEFAULT_CHAT_MODEL = "gpt-oss:20b"
+DEFAULT_CHAT_MODEL = "codestral-latest"
+DEFAULT_OVHCLOUD_MODEL = "gpt-oss-20b"
 AUTO_FALLBACK_MODEL = "__auto__"
 PREFERRED_FREE_MODELS = (
-    "gpt-oss:20b",
-    "grok-3-mini",
-    "gemini-3.1-flash-lite",
-    "minimax-m2.7",
+    "gpt-oss-20b",
     "codestral-latest",
+    "minimax-m2.7",
 )
 DEFAULT_PROMPT = """Du bist ein zuverlässiger Assistent für Home Assistant.
 Antworte in der Sprache des Benutzers klar, natürlich und kompakt.
@@ -93,12 +89,24 @@ DEFAULT_MAX_TOOL_ITERATIONS = 8
 DEFAULT_ENABLE_STREAMING = True
 DEFAULT_ENABLE_VISION = True
 DEFAULT_ENABLE_DEVICE_CONTROL = True
+DEFAULT_TOKEN_SAVING_MODE = True
 DEFAULT_ENABLE_EXTENDED_DEVICE_QUERIES = True
 DEFAULT_DEVICE_QUERY_MAX_RESULTS = 30
 DEFAULT_AUTO_UPDATE_MODELS = True
 DEFAULT_MODEL_REFRESH_INTERVAL = 24
 DEFAULT_ONLY_FREE_MODELS = False
 DEFAULT_REFERENCE_LIMIT = 0
+
+# Token-saving mode keeps ordinary chat free of the large Home Assistant LLM
+# prompt/tool catalogue and activates only the compact FreeLLM device tools when
+# the current user message actually looks like a Home Assistant request.
+LEAN_HISTORY_LIMIT = 12
+LEAN_MAX_TOOL_ITERATIONS = 4
+LEAN_MAX_TOKENS = 700
+LEAN_DEFAULT_PROMPT = """Du bist ein hilfreicher Assistent in Home Assistant.
+Antworte in der Sprache des Benutzers klar, natürlich und kompakt.
+Erfinde keine Fakten oder Gerätezustände. Nenne keine internen Werkzeugnamen."""
+LEAN_DEVICE_PROMPT = """Diese Nachricht betrifft Home Assistant. Nutze die verfügbaren Werkzeuge, wenn ein Zustand abgefragt oder ein Gerät gesteuert werden soll. Führe Änderungen nur am eindeutig verlangten Ziel aus und bestätige sie nur nach erfolgreichem Werkzeugergebnis. Bei Mehrdeutigkeit frage kurz nach."""
 
 MODEL_CACHE_MAX_AGE = timedelta(days=7)
 MODEL_REFRESH_MIN_HOURS = 1
@@ -110,6 +118,7 @@ MAX_IMAGE_ATTACHMENTS = 4
 MAX_TOOL_CALLS_PER_ROUND = 12
 MAX_TOTAL_TOOL_CALLS = 24
 MAX_TOOL_RESULT_CHARS = 12000
+MAX_RUNTIME_MODEL_FAILOVERS = 2
 SUPPORTED_IMAGE_MIME_TYPES = (
     "image/jpeg",
     "image/png",
@@ -117,9 +126,6 @@ SUPPORTED_IMAGE_MIME_TYPES = (
     "image/gif",
 )
 
-DATA_CLIENT = "client"
-DATA_MODEL_MANAGER = "model_manager"
-DATA_USAGE_MANAGER = "usage_manager"
 
 SERVICE_REFRESH_MODELS = "refresh_models"
 SERVICE_SELECT_DEFAULT_MODEL = "select_default_model"

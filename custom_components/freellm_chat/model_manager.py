@@ -1,4 +1,4 @@
-"""Dynamic LLM7 model discovery, caching, and fallback selection."""
+"""Dynamic provider model discovery, caching, and fallback selection."""
 
 from __future__ import annotations
 
@@ -28,6 +28,7 @@ from .const import (
     CONF_ONLY_FREE_MODELS,
     DEFAULT_AUTO_UPDATE_MODELS,
     DEFAULT_CHAT_MODEL,
+    DEFAULT_OVHCLOUD_MODEL,
     DEFAULT_ENABLE_DEVICE_CONTROL,
     DEFAULT_MODEL_REFRESH_INTERVAL,
     DEFAULT_ONLY_FREE_MODELS,
@@ -37,9 +38,33 @@ from .const import (
     MODEL_REFRESH_THROTTLE,
     PREFERRED_FREE_MODELS,
 )
+from .provider import DEFAULT_PROVIDER, PROVIDER_OVHCLOUD, bundled_provider_models
 
 _LOGGER = logging.getLogger(__name__)
-_CACHE_VERSION = 3
+_CACHE_VERSION = 4
+
+
+class _ModelCacheStore(Store[dict[str, Any]]):
+    """Versioned model cache with backward-compatible migrations."""
+
+    async def _async_migrate_func(
+        self,
+        old_major_version: int,
+        old_minor_version: int,
+        old_data: dict[str, Any],
+    ) -> dict[str, Any]:
+        """Migrate older model-cache payloads to the current schema."""
+        if old_major_version > _CACHE_VERSION:
+            raise NotImplementedError
+        if not isinstance(old_data, dict):
+            return {}
+
+        migrated = dict(old_data)
+        # Cache versions before multi-provider support only contained LLM7 data.
+        # Tag them explicitly so switching to OVHcloud never reuses an LLM7 cache.
+        if old_major_version < 4:
+            migrated.setdefault("provider", DEFAULT_PROVIDER)
+        return migrated
 
 
 class ModelManager:
@@ -65,7 +90,7 @@ class ModelManager:
         self._unsub_interval: Callable[[], None] | None = None
         self._refresh_lock = asyncio.Lock()
         self._initial_refresh_task: asyncio.Task[None] | None = None
-        self._store: Store[dict[str, Any]] = Store(
+        self._store: Store[dict[str, Any]] = _ModelCacheStore(
             hass, _CACHE_VERSION, f"{entry.domain}.models.{entry.entry_id}"
         )
 
@@ -109,7 +134,9 @@ class ModelManager:
         if not self.models or not _has_compatible_model(
             self.models, require_tools=self.requires_tools
         ):
-            self.models = load_bundled_models(allow_paid=self.allow_paid)
+            self.models = load_bundled_models(
+                allow_paid=self.allow_paid, provider=self.client.provider
+            )
             self.catalog_source = "bundled"
         await self.async_ensure_valid_model(require_tools=self.requires_tools)
         self._schedule_updates()
@@ -122,7 +149,11 @@ class ModelManager:
         try:
             await self.async_refresh(force=True)
         except LLM7Error as err:
-            _LOGGER.warning("Could not refresh LLM7 models at startup: %s", err)
+            _LOGGER.warning(
+                "Could not refresh %s models at startup: %s",
+                self.client.provider_name,
+                err,
+            )
 
     async def async_shutdown(self) -> None:
         """Stop automatic updates."""
@@ -134,7 +165,7 @@ class ModelManager:
         self._initial_refresh_task = None
 
     async def async_refresh(self, force: bool = False) -> list[dict[str, Any]]:
-        """Refresh model metadata from LLM7 without discarding a working cache."""
+        """Refresh model metadata without discarding a working cache."""
         async with self._refresh_lock:
             now = dt_util.utcnow()
             if (
@@ -150,15 +181,16 @@ class ModelManager:
                 models = normalize_models(raw_models, allow_paid=self.allow_paid)
                 if not models:
                     raise LLM7Error(
-                        "LLM7.io lieferte keine nutzbaren Chat-Modelle für "
-                        "diese Konfiguration."
+                        f"{self.client.provider_name} lieferte keine nutzbaren "
+                        "Chat-Modelle für diese Konfiguration."
                     )
                 if not _has_compatible_model(
                     models, require_tools=self.requires_tools
                 ):
                     raise LLM7Error(
-                        "Der aktuelle LLM7-Modellkatalog enthält kein Modell "
-                        "für die aktivierte Home-Assistant-Gerätesteuerung."
+                        f"Der aktuelle Modellkatalog von {self.client.provider_name} "
+                        "enthält kein Modell für die aktivierte "
+                        "Home-Assistant-Gerätesteuerung."
                     )
             except LLM7Error as err:
                 self.last_error = str(err)
@@ -171,6 +203,7 @@ class ModelManager:
             self.catalog_source = "live"
             await self._store.async_save(
                 {
+                    "provider": self.client.provider,
                     "updated_at": self.last_update.isoformat(),
                     "models": self.models,
                 }
@@ -264,6 +297,22 @@ class ModelManager:
         await self.async_select_model(model_id)
         return model_id
 
+    async def async_select_fallback_model(self, model_id: str) -> None:
+        """Set the preferred fallback model, or automatic selection."""
+        if model_id != AUTO_FALLBACK_MODEL:
+            model = self.get_model(model_id)
+            if model is None:
+                raise LLM7Error(f"Das Modell {model_id} ist nicht verfügbar.")
+            if self.requires_tools and not model_supports_tools(model):
+                raise LLM7Error(
+                    f"Das Modell {model_id} unterstützt keine Gerätesteuerung."
+                )
+
+        options = dict(self.entry.options)
+        options[CONF_FALLBACK_MODEL] = model_id
+        self.hass.config_entries.async_update_entry(self.entry, options=options)
+        self._notify_listeners()
+
     def get_model(self, model_id: str) -> dict[str, Any] | None:
         """Return model metadata by ID."""
         return next(
@@ -300,6 +349,8 @@ class ModelManager:
     async def _async_load_cache(self) -> None:
         cached = await self._store.async_load()
         if not isinstance(cached, dict):
+            return
+        if cached.get("provider", DEFAULT_PROVIDER) != self.client.provider:
             return
 
         cached_models = cached.get("models")
@@ -346,7 +397,7 @@ class ModelManager:
             try:
                 await self.async_refresh(force=True)
             except LLM7Error as err:
-                _LOGGER.warning("Automatic LLM7 model refresh failed: %s", err)
+                _LOGGER.warning("Automatic provider model refresh failed: %s", err)
 
         self._unsub_interval = async_track_time_interval(
             self.hass, refresh_models, timedelta(hours=hours)
@@ -551,7 +602,7 @@ def model_is_token_free(model: dict[str, Any]) -> bool:
 def model_label(model: dict[str, Any]) -> str:
     """Build a useful but compact model label."""
     tags: list[str] = []
-    tags.append("ohne Token" if model_is_token_free(model) else "Token")
+    tags.append("ohne API-Key" if model_is_token_free(model) else "API-Key")
     if model_supports_tools(model):
         tags.append("Geräte")
     if model_supports_vision(model):
@@ -568,40 +619,43 @@ def model_label(model: dict[str, Any]) -> str:
     return f"{model['id']} — {', '.join(tags)}"
 
 
-def load_bundled_models(*, allow_paid: bool) -> list[dict[str, Any]]:
-    """Load the bundled emergency catalog."""
+def load_bundled_models(
+    *, allow_paid: bool, provider: str = DEFAULT_PROVIDER
+) -> list[dict[str, Any]]:
+    """Load the provider-specific bundled emergency catalog."""
+    provider_models = bundled_provider_models(provider)
+    if provider_models:
+        models = normalize_models(provider_models, allow_paid=True)
+        return models or [_minimal_default_model(provider)]
+
     path = Path(__file__).with_name("fallback_models.json")
     try:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
-        return [
-            {
-                "id": DEFAULT_CHAT_MODEL,
-                "usage_based_only": False,
-                "tools_calling": True,
-                "stream": True,
-                "modalities": {"input": ["text"], "output": ["text"]},
-                "capabilities": {"tools": True, "stream": True},
-            }
-        ]
+        return [_minimal_default_model(provider)]
     if not isinstance(data, list):
-        return [_minimal_default_model()]
+        return [_minimal_default_model(provider)]
     models = normalize_models(
         [model for model in data if isinstance(model, dict)],
         allow_paid=allow_paid,
     )
-    return models or [_minimal_default_model()]
+    return models or [_minimal_default_model(provider)]
 
 
-def _minimal_default_model() -> dict[str, Any]:
+def _minimal_default_model(provider: str = DEFAULT_PROVIDER) -> dict[str, Any]:
+    model_id = (
+        DEFAULT_OVHCLOUD_MODEL
+        if provider == PROVIDER_OVHCLOUD
+        else DEFAULT_CHAT_MODEL
+    )
     return {
-        "id": DEFAULT_CHAT_MODEL,
+        "id": model_id,
         "usage_based_only": False,
         "tools_calling": True,
         "stream": True,
-        "reasoning": False,
+        "reasoning": provider == PROVIDER_OVHCLOUD,
         "modalities": {"input": ["text"], "output": ["text"]},
-        "context_window": {},
+        "context_window": {"tokens": 131000} if provider == PROVIDER_OVHCLOUD else {},
         "capabilities": {"tools": True, "stream": True},
     }
 

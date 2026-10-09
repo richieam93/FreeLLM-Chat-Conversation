@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Any, override
 
 from homeassistant.components.button import ButtonEntity
-from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant, callback
 from homeassistant.exceptions import HomeAssistantError
 from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
@@ -13,16 +12,14 @@ from homeassistant.helpers.entity_platform import AddConfigEntryEntitiesCallback
 from .api import LLM7Error
 from .const import (
     CONF_CHAT_MODEL,
-    DATA_MODEL_MANAGER,
-    DATA_USAGE_MANAGER,
-    DOMAIN,
 )
 from .entity import service_device_info
+from .runtime import FreeLLMConfigEntry
 
 
 async def async_setup_entry(
     hass: HomeAssistant,
-    entry: ConfigEntry,
+    entry: FreeLLMConfigEntry,
     async_add_entities: AddConfigEntryEntitiesCallback,
 ) -> None:
     """Set up model and usage management buttons."""
@@ -38,14 +35,14 @@ async def async_setup_entry(
 class _ModelManagerButton(ButtonEntity):
     _attr_has_entity_name = True
 
-    def __init__(self, entry: ConfigEntry, key: str) -> None:
+    def __init__(self, entry: FreeLLMConfigEntry, key: str) -> None:
         self.entry = entry
         self._attr_unique_id = f"{entry.entry_id}_{key}"
         self._attr_device_info = service_device_info(entry)
 
     @property
     def manager(self):
-        return self.hass.data[DOMAIN][self.entry.entry_id][DATA_MODEL_MANAGER]
+        return self.entry.runtime_data.model_manager
 
     @property
     @override
@@ -70,12 +67,12 @@ class _ModelManagerButton(ButtonEntity):
 
 
 class RefreshModelsButton(_ModelManagerButton):
-    """Refresh the LLM7 model catalog immediately."""
+    """Refresh the active provider model catalog immediately."""
 
     _attr_translation_key = "refresh_models"
     _attr_icon = "mdi:refresh"
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: FreeLLMConfigEntry) -> None:
         super().__init__(entry, "refresh_models")
 
     @override
@@ -92,7 +89,7 @@ class SelectDefaultModelButton(_ModelManagerButton):
     _attr_translation_key = "select_default_model"
     _attr_icon = "mdi:restore"
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: FreeLLMConfigEntry) -> None:
         super().__init__(entry, "select_default_model")
 
     @override
@@ -110,14 +107,14 @@ class ResetUsageStatisticsButton(ButtonEntity):
     _attr_translation_key = "reset_usage_statistics"
     _attr_icon = "mdi:counter"
 
-    def __init__(self, entry: ConfigEntry) -> None:
+    def __init__(self, entry: FreeLLMConfigEntry) -> None:
         self.entry = entry
         self._attr_unique_id = f"{entry.entry_id}_reset_usage_statistics"
         self._attr_device_info = service_device_info(entry)
 
     @property
     def usage_manager(self):
-        return self.hass.data[DOMAIN][self.entry.entry_id][DATA_USAGE_MANAGER]
+        return self.entry.runtime_data.usage_manager
 
     @property
     @override
